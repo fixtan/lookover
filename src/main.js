@@ -20,7 +20,7 @@ import {
 } from './edit.js';
 import { applyAdjust } from './adjust.js';
 import { CropTool } from './crop.js';
-import { FORMATS, formatOfExt, encode, uniquePath, fmtBytes } from './export.js';
+import { FORMATS, formatOfExt, encode, usableFormat, uniquePath, fmtBytes } from './export.js';
 import { settings, saveSettings } from './settings.js';
 import { toast, confirmBox, promptBox, showHelp, editKeys, setKeysHook, editPresets, modalOpen } from './ui.js';
 import { Player } from './anim.js';
@@ -528,12 +528,13 @@ async function quickExport(n) {
   try {
     const dir = p.dir || (S.item.virtual ? folder.dir || settings.lastDir : dirname(S.item.path));
     if (!dir) { toast('書き出し先のフォルダが決まらない。「名前を付けて保存」を使う。', { err: true }); return; }
-    const r = await encodeOut(p.format, p.quality, p.long);
-    let path = join(dir, stem(S.item.name) + p.suffix + '.' + FORMATS[p.format].ext);
+    const u = await usableFormat(p.format);
+    const r = await encodeOut(u.format, p.quality, p.long);
+    let path = join(dir, stem(S.item.name) + p.suffix + '.' + FORMATS[u.format].ext);
     // 元の画像そのものは、ここでは絶対に上書きしない
     if (path === S.item.path || !p.overwrite) path = await uniquePath(path, S.item.path);
     await be.writeFile(path, r.bytes);
-    toast(`書き出した: ${basename(path)}\n${r.w} × ${r.h} ／ ${fmtBytes(r.bytes.length)}`);
+    toast(`書き出した: ${basename(path)}\n${r.w} × ${r.h} ／ ${fmtBytes(r.bytes.length)}` + (u.fellBack ? '\nこの環境は WebP に書き出せないので、JPEG にした' : ''));
     await afterWrite();
     return path;
   } catch (err) {
@@ -551,6 +552,9 @@ async function saveAs() {
     // 拡張子で形式を決める。知らない拡張子・拡張子なしなら、選んである形式の拡張子を足す。
     let format = formatOfExt(extname(path));
     if (!format) { format = settings.format; path += '.' + FORMATS[format].ext; }
+    // WebP に書き出せない環境では JPEG にして、拡張子も合わせる
+    const u = await usableFormat(format);
+    if (u.fellBack) { path = path.replace(/\.webp$/i, '') + '.' + FORMATS.jpeg.ext; format = u.format; }
     const r = await encodeOut(format, settings.quality);
     await be.writeFile(path, r.bytes);
     toast(`保存した: ${basename(path)}\n${r.w} × ${r.h} ／ ${fmtBytes(r.bytes.length)}`);

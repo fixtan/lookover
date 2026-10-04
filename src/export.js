@@ -15,6 +15,25 @@ export function formatOfExt(ext) {
   return null;
 }
 
+// この WebView が WebP に書き出せるか。Windows (WebView2) は書き出せるが、
+// Mac (WKWebView) や Linux (WebKitGTK) は書き出せず、黙って PNG を返してくる。
+let webpOk = null;
+export async function canEncodeWebp() {
+  if (webpOk === null) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 1;
+    const blob = await new Promise((ok) => cv.toBlob(ok, 'image/webp', 0.8));
+    webpOk = !!blob && blob.type === 'image/webp';
+  }
+  return webpOk;
+}
+
+// 頼まれた形式で書き出せるか確かめて、だめなら JPEG にする。{ format, fellBack } を返す。
+export async function usableFormat(format) {
+  if (format === 'webp' && !(await canEncodeWebp())) return { format: 'jpeg', fellBack: true };
+  return { format, fellBack: false };
+}
+
 // 絵を、指定の形式のバイト列にする。quality は 1 〜 100 (PNG では使わない)。
 export async function encode(src, w, h, format, quality) {
   const f = FORMATS[format];

@@ -941,6 +941,28 @@ section('キーの割り当て');
 }
 
 // ----------------------------------------------------------------------
+section('WebP に書き出せない環境 (Mac / Linux の WebView)');
+{
+  // toBlob に WebP を頼むと、黙って PNG を返す WebView を真似る
+  const ctx3 = await b.newContext({ viewport: { width: 1000, height: 700 } });
+  await ctx3.addInitScript(() => {
+    const orig = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (cb, type, q) { return orig.call(this, cb, type === 'image/webp' ? 'image/png' : type, q); };
+  });
+  const q = await ctx3.newPage();
+  await q.goto('http://localhost:8770/?open=' + encodeURIComponent(F('grad.png')));
+  await q.waitForFunction(() => window.__iv && __iv.S.bmp, null, { timeout: 20000 });
+  await q.evaluate(() => localStorage.clear());
+  await q.reload();
+  await q.waitForFunction(() => window.__iv && __iv.S.bmp, null, { timeout: 20000 });
+  const out = await q.evaluate(() => __iv.quickExport(0)); // 既定のプリセット 1 番は WebP
+  ok(out && out.endsWith('.jpg') && fs.existsSync(out), 'WebP のプリセットは、JPEG にして書き出す: ' + (out && path.basename(out)));
+  ok(/JPEG にした/.test(await q.evaluate(() => document.getElementById('toasts').textContent)), 'そう知らせる');
+  if (out) fs.rmSync(out, { force: true });
+  await ctx3.close();
+}
+
+// ----------------------------------------------------------------------
 section('パスの扱い (Windows の形も)');
 {
   const r = await ev(async () => {

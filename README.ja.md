@@ -44,13 +44,15 @@
 
 WebView2 が必要 (Windows 11 には最初から入っている)。
 
+**macOS / Linux (試験的。ほとんど試していない)**: `.dmg` / `.deb` / `.AppImage` も作ってある。署名はしていない。Mac は初回だけ右クリック →「開く」(「壊れている」と出たら `xattr -cr /Applications/Lookover.app`)。この環境の WebView は WebP に書き出せないので、WebP のプリセットは自動で JPEG になる。
+
 ## 制限
 
 - HEIC / JXL / RAW は開けない (`src/decode.js` の `registerDecoder` に足す口だけある)
 - 書き出すと EXIF と色プロファイル (ICC) は消える (向きは絵に焼き込む)
 - 書き出していない編集は、アプリを閉じると確認なしで消える
 - 文字入れ、自由角度の回転、まとめて書き出し、サムネイル一覧、zip / rar の中の閲覧は無い
-- 確かめたのは、作者の Windows 11 1 台だけ
+- 主に確かめたのは、作者の Windows 11 1 台。Mac / Linux 版は試験的
 
 ## 自分でビルドする
 
@@ -59,10 +61,10 @@ Node.js と Rust が要る (Windows は WebView2 も)。
 ```
 npm install
 npm run tauri dev        # 動かす (初回は Rust のビルドで数分)
-npm run tauri build      # インストーラーを作る
+npx tauri build --bundles nsis   # インストーラーを作る (Windows)
 ```
 
-起動時に画像を渡す: `npm run tauri dev -- -- C:\path\a.png`
+起動時に画像を渡す: `npx tauri dev -- C:\path\a.png`
 
 ### 試験
 

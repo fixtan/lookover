@@ -1,6 +1,8 @@
-# タグ (v0.1.0 など) を push すると、Windows 用のインストーラーを作って、Releases に下書きで置く。
-# 使い方:  git tag v0.1.0  →  git push origin v0.1.0
-# 注意: 署名はしない (SmartScreen が「不明な発行元」と出す)。この流れ自体は、まだ動かしていない。
+# タグ (v0.1.0 など) を push すると、Windows / Mac / Linux 用のインストーラーを作って、Releases に下書きで置く。
+# 使い方:  git tag v0.1.1  →  git push origin v0.1.1
+# 注意:
+#   - どれも署名していない。Windows は SmartScreen、Mac は Gatekeeper が最初に警告を出す。
+#   - Windows は NSIS だけ作る (MSI の WiX が、手元でも CI でも落ちたため)。
 name: release
 on:
   push:
@@ -8,13 +10,39 @@ on:
 permissions:
   contents: write
 jobs:
-  windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false      # 1 つ落ちても、ほかは最後まで作る
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            args: '--bundles nsis'
+          - name: mac-apple-silicon
+            os: macos-latest
+            args: '--target aarch64-apple-darwin'
+            rust_targets: aarch64-apple-darwin
+          - name: mac-intel
+            os: macos-latest
+            args: '--target x86_64-apple-darwin'
+            rust_targets: x86_64-apple-darwin
+          - name: linux
+            os: ubuntu-22.04
+            args: '--bundles deb,appimage'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - name: Linux の依存を入れる
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: npm install
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -24,3 +52,4 @@ jobs:
           releaseName: 'Lookover ${{ github.ref_name }}'
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}

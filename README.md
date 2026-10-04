@@ -44,13 +44,15 @@ Supported files: PNG, JPEG, WebP, GIF, BMP, AVIF, ICO, SVG.
 
 Requires WebView2 (preinstalled on Windows 11).
 
+**macOS / Linux (experimental, little tested)**: `.dmg` / `.deb` / `.AppImage` files are built too. They are unsigned: on macOS, right-click → Open the first time (if it says the app is damaged, run `xattr -cr /Applications/Lookover.app`). These WebViews cannot encode WebP, so WebP presets fall back to JPEG automatically.
+
 ## Limitations
 
 - No HEIC / JXL / RAW. There is a hook for it (`registerDecoder` in `src/decode.js`), nothing plugged in yet
 - Exporting drops EXIF and the ICC profile (orientation is baked into the pixels)
 - Unsaved edits are lost when the app closes, without a prompt
 - No text tool, no free-angle rotation, no batch export, no thumbnail grid, no archive (zip/rar) browsing
-- Only tested on Windows 11 on one machine. The UI strings are Japanese
+- Mainly tested on Windows 11 on one machine. macOS / Linux builds exist but are experimental. The UI strings are Japanese
 
 ## Build from source
 
@@ -59,10 +61,10 @@ Needs Node.js and Rust (plus WebView2 on Windows).
 ```
 npm install
 npm run tauri dev        # run (the first Rust build takes a few minutes)
-npm run tauri build      # make the installer
+npx tauri build --bundles nsis   # make the installer (Windows)
 ```
 
-Open an image at startup: `npm run tauri dev -- -- C:\path\a.png`
+Open an image at startup: `npx tauri dev -- C:\path\a.png`
 
 ### Tests
 
