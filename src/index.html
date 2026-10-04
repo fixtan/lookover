@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lookover</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="main.js" defer></script>
+  </head>
+
+  <body>
+    <!-- 画像を出す場所。普段はこれだけが見えている。 -->
+    <main id="stage">
+      <canvas id="view"></canvas>
+      <div id="empty">
+        <p class="big">画像をここに落とす</p>
+        <p>Ctrl + O で開く ／ Ctrl + V で貼り付け ／ F1 で操作の一覧</p>
+      </div>
+      <div id="toasts" aria-live="polite"></div>
+    </main>
+
+    <!-- 編集パネル。E キーで出し入れする。 -->
+    <aside id="panel" hidden>
+      <section>
+        <h2>向き</h2>
+        <div class="row">
+          <button data-act="rotL" title="左へ 90 度 (Shift + R)">⟲ 左</button>
+          <button data-act="rotR" title="右へ 90 度 (R)">⟳ 右</button>
+          <button data-act="flipH" title="左右反転 (H)">⇋ 左右</button>
+          <button data-act="flipV" title="上下反転 (V)">⇵ 上下</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>切り抜き</h2>
+        <div class="row">
+          <button data-act="crop" id="btn-crop" title="切り抜きを始める (C)">範囲を選ぶ</button>
+          <select id="crop-aspect" title="縦横比">
+            <option value="free">自由</option>
+            <option value="orig">元の比率</option>
+            <option value="1:1">1 : 1</option>
+            <option value="4:3">4 : 3</option>
+            <option value="3:2">3 : 2</option>
+            <option value="16:9">16 : 9</option>
+            <option value="9:16">9 : 16</option>
+          </select>
+        </div>
+        <div class="row nums" id="crop-nums">
+          <label>X <input type="number" id="crop-x" min="0" /></label>
+          <label>Y <input type="number" id="crop-y" min="0" /></label>
+          <label>幅 <input type="number" id="crop-w" min="1" /></label>
+          <label>高 <input type="number" id="crop-h" min="1" /></label>
+        </div>
+        <div class="row">
+          <button data-act="cropApply" id="btn-crop-apply" disabled title="Enter">決定</button>
+          <button data-act="cropClear" id="btn-crop-clear" disabled>切り抜きをやめる</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>大きさ</h2>
+        <div class="row">
+          <select id="rs-mode">
+            <option value="none">変えない</option>
+            <option value="width">幅を指定</option>
+            <option value="height">高さを指定</option>
+            <option value="long">長い辺を指定</option>
+            <option value="percent">％で指定</option>
+          </select>
+          <input type="number" id="rs-value" min="1" value="1920" />
+        </div>
+        <div class="row" id="rs-presets">
+          <button data-rs="1920">1920</button>
+          <button data-rs="1280">1280</button>
+          <button data-rs="1024">1024</button>
+          <button data-rs="800">800</button>
+          <button data-rs="640">640</button>
+        </div>
+        <div class="dim" id="rs-out"></div>
+      </section>
+
+      <section>
+        <h2>色</h2>
+        <div id="adj"></div>
+        <div class="row">
+          <button data-act="adjReset">色を元に戻す</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>隠す・目印</h2>
+        <div class="row">
+          <button data-act="mark-mosaic" data-tool="mosaic" title="モザイク (M)">モザイク</button>
+          <button data-act="mark-blur" data-tool="blur" title="ぼかし (B)">ぼかし</button>
+          <button data-act="mark-fill" data-tool="fill" title="塗りつぶし (N)">塗る</button>
+        </div>
+        <div class="row">
+          <button data-act="mark-frame" data-tool="frame" title="枠で囲む (K)">枠</button>
+          <button data-act="mark-arrow" data-tool="arrow" title="矢印 (A)">矢印</button>
+        </div>
+        <label class="slider">強さ・太さ <span id="mark-size-v">16</span>
+          <input type="range" id="mark-size" min="4" max="64" step="1" value="16" />
+        </label>
+        <div class="row">
+          <label class="inline"><span id="mark-color-label">塗る色</span> <input type="color" id="mark-color" value="#000000" /></label>
+          <button data-act="markClear" id="btn-mark-clear" disabled>全部消す</button>
+        </div>
+        <div class="dim" id="mark-info"></div>
+      </section>
+
+      <section>
+        <h2>書き出し</h2>
+        <div class="row">
+          <select id="ex-format">
+            <option value="webp">WebP</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+          </select>
+          <label class="slider grow">品質 <span id="ex-quality-v">85</span>
+            <input type="range" id="ex-quality" min="10" max="100" step="1" value="85" />
+          </label>
+        </div>
+        <div class="dim" id="ex-info"></div>
+        <div class="row">
+          <button data-act="saveAs" title="名前を付けて保存 (Ctrl + Shift + S)">別名で保存</button>
+          <button data-act="save" title="上書き保存 (Ctrl + S)">上書き</button>
+          <button data-act="copy" title="Ctrl + C">コピー</button>
+        </div>
+        <h3>ワンキー書き出し</h3>
+        <div id="presets"></div>
+        <div class="row">
+          <button data-act="presetEdit">プリセットを編集</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="row">
+          <button data-act="undo" id="btn-undo" title="Ctrl + Z">取り消す</button>
+          <button data-act="redo" id="btn-redo" title="Ctrl + Y">やり直す</button>
+          <button data-act="resetAll" id="btn-reset">全部戻す</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>設定</h2>
+        <div class="row">
+          <label class="inline grow">ホイール
+            <select id="set-wheel" class="grow">
+              <option value="nav">前後の画像へ</option>
+              <option value="zoom">拡大・縮小</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label class="inline grow">並び順
+            <select id="set-sort" class="grow">
+              <option value="name">名前</option>
+              <option value="mtime">新しい順</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label class="inline grow">ごみ箱へ送る前に
+            <select id="set-confirm" class="grow">
+              <option value="1">確認する</option>
+              <option value="0">確認しない</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <button data-act="help" title="F1">操作の一覧</button>
+          <button data-act="keys">キーの設定</button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 下の 1 行。ファイル名や大きさを出す。 -->
+    <footer id="status">
+      <span id="st-name"></span>
+      <span id="st-pos"></span>
+      <span id="st-dim"></span>
+      <span id="st-size"></span>
+      <span id="st-zoom" role="button" tabindex="-1" title="クリックで 全体 ⇔ 等倍"></span>
+      <span id="st-edit" hidden>編集あり</span>
+      <span id="st-tool"></span>
+      <span id="st-help" role="button" tabindex="-1" title="操作の一覧を出す"></span>
+    </footer>
+
+    <!-- 確認や一覧を出す枠。中身は必要なときに入れる。 -->
+    <div id="modal" hidden>
+      <div id="modal-box"></div>
+    </div>
+  </body>
+</html>

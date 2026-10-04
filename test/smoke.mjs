@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+const FILES = new URL('./files/', import.meta.url).pathname;
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+const p = await b.newPage({ viewport: { width: 1200, height: 760 } });
+p.on('pageerror', (e) => console.log('PAGEERR', String(e)));
+p.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log('CON', m.type(), m.text()); });
+await p.goto('http://localhost:8770/?open=' + encodeURIComponent(FILES + 'img1.png'));
+await p.waitForFunction(() => window.__iv && window.__iv.S.bmp, null, { timeout: 15000 });
+console.log(await p.evaluate(() => ({ title: document.title, n: __iv.folder.count, names: __iv.folder.items.map((i) => i.name), status: document.getElementById('status').innerText })));
+await p.keyboard.press('e');
+await p.waitForTimeout(600);
+await p.screenshot({ path: 'test/shot-smoke.png' });
+await b.close();
