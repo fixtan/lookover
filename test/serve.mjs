@@ -18,7 +18,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 
 function entry(p) {
   const st = fs.statSync(p);
-  return { name: path.basename(p), path: p, size: st.size, mtime: st.mtimeMs, is_dir: st.isDirectory() };
+  return { name: path.basename(p), path: p, size: st.size, mtime: st.mtimeMs, ctime: st.birthtimeMs, is_dir: st.isDirectory() };
 }
 
 const body = (req) => new Promise((ok) => { const a = []; req.on('data', (c) => a.push(c)); req.on('end', () => ok(Buffer.concat(a))); });

@@ -9,6 +9,8 @@ const MIME = {
   ico: 'image/x-icon', svg: 'image/svg+xml',
 };
 
+import { parseInfo, HEAD_BYTES } from './info.js';
+
 // 追加のデコーダー。拡張子 → (bytes) => Promise<ImageBitmap>
 const extra = new Map();
 
@@ -22,17 +24,23 @@ export const isImageExt = (ext) => ext in MIME || extra.has(ext);
 export const mimeOf = (ext) => MIME[ext] || 'application/octet-stream';
 
 // bytes: ArrayBuffer、ext: 拡張子 (小文字)。
-// 返すのは { bitmap, width, height, anim }。失敗したら例外。
+// 返すのは { bitmap, width, height, anim, info }。失敗したら例外。
+//   info  : ファイルの先頭から読んだ形式・撮影情報 (info.js)。読めなければ null
 //   bitmap: 絵 (動く画像なら、最初の 1 コマ)
 //   anim  : 動く画像なら { bytes, type, frames }、そうでなければ null
 export async function decode(bytes, ext) {
   if (extra.has(ext)) {
     const bitmap = await extra.get(ext)(bytes);
-    return { bitmap, width: bitmap.width, height: bitmap.height, anim: null };
+    return { bitmap, width: bitmap.width, height: bitmap.height, anim: null, info: headInfo(bytes, ext) };
   }
   const blob = new Blob([bytes], { type: mimeOf(ext) });
   const bitmap = ext === 'svg' ? await decodeViaImg(blob) : await decodeBlob(blob);
-  return { bitmap, width: bitmap.width, height: bitmap.height, anim: await probeAnim(bytes, ext) };
+  return { bitmap, width: bitmap.width, height: bitmap.height, anim: await probeAnim(bytes, ext), info: headInfo(bytes, ext) };
+}
+
+// 先頭だけを見て、形式や撮影情報を読む (info.js)。失敗しても開くのには関係ない。
+function headInfo(bytes, ext) {
+  try { return parseInfo(new Uint8Array(bytes, 0, Math.min(bytes.byteLength, HEAD_BYTES)), ext); } catch (e) { return null; }
 }
 
 // 動く画像 (コマが 2 つ以上ある GIF / WebP) かどうかを調べる。

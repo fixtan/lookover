@@ -18,11 +18,11 @@ async function http(name, params, init) {
 }
 
 // Rust 側の名前 (is_dir) を、画面側の呼び方 (isDir) にそろえる
-const entry = (e) => ({ name: e.name, path: e.path, size: e.size, mtime: e.mtime, isDir: e.is_dir });
+const entry = (e) => ({ name: e.name, path: e.path, size: e.size, mtime: e.mtime, ctime: e.ctime || 0, isDir: e.is_dir });
 
 // ---- ファイル ----
 
-// フォルダの中身。[{ name, path, size, mtime, isDir }]
+// フォルダの中身。[{ name, path, size, mtime, ctime, isDir }]
 export async function listDir(dir) {
   const list = isTauri ? await invoke('list_dir', { dir }) : await (await http('list', { dir })).json();
   return list.map(entry);
@@ -93,6 +93,12 @@ export function onOpenPaths(fn) {
 export function setTitle(title) {
   document.title = title;
   if (isTauri) invoke('set_title', { title });
+}
+
+// 窓を閉じる (開発用のブラウザでは、閉じられるときだけ閉じる)
+export async function closeWindow() {
+  if (isTauri) return await invoke('close_window');
+  window.close();
 }
 
 export async function setFullscreen(on) {

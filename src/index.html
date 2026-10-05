@@ -16,6 +16,7 @@
         <p class="big">画像をここに落とす</p>
         <p>Ctrl + O で開く ／ Ctrl + V で貼り付け ／ F1 で操作の一覧</p>
       </div>
+      <pre id="info" hidden></pre>
       <div id="toasts" aria-live="polite"></div>
     </main>
 
@@ -164,6 +165,14 @@
             <select id="set-confirm" class="grow">
               <option value="1">確認する</option>
               <option value="0">確認しない</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label class="inline grow">画像の情報の位置情報
+            <select id="set-gps" class="grow">
+              <option value="0">「あり」とだけ出す</option>
+              <option value="1">座標まで出す</option>
             </select>
           </label>
         </div>

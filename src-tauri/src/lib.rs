@@ -21,6 +21,7 @@ struct Entry {
     path: String,  // フルパス
     size: u64,     // バイト数
     mtime: f64,    // 更新日時 (1970 年からのミリ秒。JavaScript の Date と同じ単位)
+    ctime: f64,    // 作成日時 (同じ単位。取れない環境では 0)
     is_dir: bool,  // フォルダかどうか
 }
 
@@ -28,6 +29,12 @@ fn entry_of(path: &Path) -> Result<Entry, String> {
     let meta = fs::metadata(path).map_err(|e| format!("{}: {}", path.display(), e))?;
     let mtime = meta
         .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as f64)
+        .unwrap_or(0.0);
+    let ctime = meta
+        .created()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as f64)
@@ -40,6 +47,7 @@ fn entry_of(path: &Path) -> Result<Entry, String> {
         path: path.to_string_lossy().into_owned(),
         size: meta.len(),
         mtime,
+        ctime,
         is_dir: meta.is_dir(),
     })
 }
@@ -180,6 +188,12 @@ fn set_title(window: tauri::WebviewWindow, title: String) {
     let _ = window.set_title(&title);
 }
 
+/// 窓を閉じる。(JavaScript の窓 API を使うと権限の設定が増えるので、ここで閉じる)
+#[tauri::command]
+fn close_window(window: tauri::WebviewWindow) {
+    let _ = window.close();
+}
+
 #[tauri::command]
 fn set_fullscreen(window: tauri::WebviewWindow, on: bool) {
     let _ = window.set_fullscreen(on);
@@ -275,6 +289,7 @@ pub fn run() {
             startup_paths,
             startup_args,
             set_title,
+            close_window,
             set_fullscreen,
             is_fullscreen,
             pick_open,

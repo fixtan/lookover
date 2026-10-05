@@ -27,6 +27,7 @@ export const ACTION_TABLE = [
   { id: 'actual', group: '見る', label: '等倍 (100%)', keys: ['1'] },
   { id: 'full', group: '見る', label: '全画面 (切り抜き中は「決定」)', keys: ['Enter', 'F11'] },
   { id: 'original', group: '見る', label: '押している間、元の絵を見る', keys: ['\\', '`'] },
+  { id: 'info', group: '見る', label: '画像の情報を重ねて出す・消す', keys: ['I'] },
   { id: 'help', group: '見る', label: '操作の一覧', keys: ['F1', '?'] },
   // ---- 開く・消す ----
   { id: 'open', group: '開く・消す', label: '開く', keys: ['Ctrl+O'] },
@@ -34,6 +35,7 @@ export const ACTION_TABLE = [
   { id: 'rename', group: '開く・消す', label: '名前を変える', keys: ['F2'] },
   { id: 'remove', group: '開く・消す', label: 'ごみ箱へ送る', keys: ['Delete'] },
   { id: 'reveal', group: '開く・消す', label: 'エクスプローラーで場所を開く', keys: ['Ctrl+Shift+E'] },
+  { id: 'quit', group: '開く・消す', label: 'アプリを閉じる', keys: ['Ctrl+W'] },
   { id: 'reload', group: '開く・消す', label: '読み直す', keys: ['F5', 'Ctrl+R'] },
   // ---- 直す ----
   { id: 'panel', group: '直す', label: '編集パネルを出す・しまう', keys: ['E'] },

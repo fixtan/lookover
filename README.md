@@ -30,21 +30,23 @@ I built it for myself as a replacement for Honeyview, because I was tired of ope
 - Copy to clipboard, paste an image from the clipboard
 
 **Also**
+- Close the app with <kbd>Ctrl</kbd>+<kbd>W</kbd> (rebindable)
 - Rename (<kbd>F2</kbd>), move to Recycle Bin (<kbd>Delete</kbd>, confirmation can be turned off), reveal in Explorer
 - Drag and drop to open. Opening a second image reuses the running window
+- **Image info overlay** (<kbd>I</kbd>): size, format, file size, shooting date, camera, exposure, modified date at the top left. It stays on across images and restarts. GPS coordinates stay hidden ("あり" only) unless you turn them on in settings
 - **Every shortcut can be rebound** (<kbd>F1</kbd> → "キーを変える"). <kbd>F1</kbd> also shows the full list
 
 Supported files: PNG, JPEG, WebP, GIF, BMP, AVIF, ICO, SVG.
 
 ## Install
 
-1. Download the installer (`.msi` or `.exe`) from [Releases](../../releases) and run it.
+1. Download the installer (`.exe`) from [Releases](../../releases) and run it.
 2. The installer is **not code-signed**, so Windows SmartScreen will say "unknown publisher" once. Click "More info" → "Run anyway".
 3. To open images by double-click, set Lookover as the default app (Windows Settings → Default apps).
 
 Requires WebView2 (preinstalled on Windows 11).
 
-**macOS / Linux (experimental, little tested)**: `.dmg` / `.deb` / `.AppImage` files are built too. They are unsigned: on macOS, right-click → Open the first time (if it says the app is damaged, run `xattr -cr /Applications/Lookover.app`). These WebViews cannot encode WebP, so WebP presets fall back to JPEG automatically.
+**macOS / Linux**: `.dmg` / `.deb` / `.AppImage` files are built too. They are unsigned: on macOS, right-click → Open the first time (if it will not open: System Settings → Privacy & Security → "Open Anyway"; if it says the app is damaged, run `xattr -cr /Applications/Lookover.app`). On Linux, `chmod +x` the AppImage and run it. These WebViews cannot encode WebP, so WebP presets fall back to JPEG automatically (a toast tells you).
 
 ## Limitations
 
@@ -52,7 +54,7 @@ Requires WebView2 (preinstalled on Windows 11).
 - Exporting drops EXIF and the ICC profile (orientation is baked into the pixels)
 - Unsaved edits are lost when the app closes, without a prompt
 - No text tool, no free-angle rotation, no batch export, no thumbnail grid, no archive (zip/rar) browsing
-- Mainly tested on Windows 11 on one machine. macOS / Linux builds exist but are experimental. The UI strings are Japanese
+- Checked on Windows 11, macOS (Intel) and Linux (AppImage). Apple Silicon Macs are not verified on real hardware. The UI strings are Japanese
 
 ## Build from source
 

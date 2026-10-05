@@ -46,6 +46,23 @@ ex = p.getexif()
 ex[0x0112] = 6
 p.save(os.path.join(OUT, 'photo_exif6.jpg'), quality=95, exif=ex)
 
+
+# EXIF 入りの写真 (画像の情報の試験用)。件数を変えないよう info フォルダに置く。
+# カメラ: Canon EOS R6、1/250 秒、f/1.8、ISO 400、85mm (35mm 換算 85)、撮影 2026-10-04 12:34:56、位置: 北緯 35°40'48" 東経 139°45'36"
+os.makedirs(os.path.join(OUT, 'info'))
+from PIL.TiffImagePlugin import IFDRational as R
+ex = Image.Exif()
+ex[0x010F] = 'Canon'; ex[0x0110] = 'Canon EOS R6'; ex[0x0131] = 'TestSoft 1.0'; ex[0x0112] = 1
+e2 = ex.get_ifd(0x8769)
+e2[0x9003] = '2026:10:04 12:34:56'; e2[0x829A] = R(1, 250); e2[0x829D] = R(18, 10); e2[0x8827] = 400
+e2[0x920A] = R(85, 1); e2[0xA405] = 85; e2[0xA434] = 'RF85mm F1.2 L USM'
+g2 = ex.get_ifd(0x8825)
+g2[1] = 'N'; g2[2] = (R(35, 1), R(40, 1), R(48, 1)); g2[3] = 'E'; g2[4] = (R(139, 1), R(45, 1), R(36, 1))
+quad(300, 200).save(os.path.join(OUT, 'info', 'photo_info.jpg'), quality=92, exif=ex)
+quad(300, 200).save(os.path.join(OUT, 'info', 'photo_info.webp'), quality=90, exif=ex)
+quad(120, 80).save(os.path.join(OUT, 'info', 'photo_info.png'), exif=ex)
+quad(120, 80).save(os.path.join(OUT, 'info', 'plain.jpg'))
+
 # 大きい絵 (速さの確認用)
 big = Image.effect_noise((4000, 3000), 40).convert('RGB')
 big.save(os.path.join(OUT, 'zz_big.jpg'), quality=88)

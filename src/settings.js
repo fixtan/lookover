@@ -24,6 +24,8 @@ const DEFAULTS = {
   markColor: '#000000', // 塗りつぶしの色
   penColor: '#ff3b30',  // 枠と矢印の色
   lastDir: '',
+  info: false,      // 画像の情報を左上に重ねているか (画像を替えても、再起動しても、そのまま)
+  infoGps: false,   // 情報に、撮影場所の座標まで出すか (false なら「あり」とだけ)
   confirmDelete: true, // ごみ箱へ送る前に確認するか (ごみ箱なので、消しても戻せる)
   keys: {},          // 変えたキーの割り当て { 処理の名前: [キー, …] }。keys.js が読み書きする
 };

@@ -13,6 +13,7 @@ import * as be from './backend.js';
 import { dirname, basename, extname, stem, join } from './backend.js';
 import { Folder } from './folder.js';
 import { decodeBlob } from './decode.js';
+import { formatInfo } from './info.js';
 import { View } from './view.js';
 import {
   ADJ_KEYS, emptyEdit, cloneEdit, isIdentity, hasAdjust, orientedSize, clampRect, cropRect,
@@ -38,7 +39,7 @@ folder.sort = settings.sort;
 
 // いま開いている 1 枚についての状態
 const S = {
-  item: null,          // { name, path, size, mtime }。貼り付けた画像は { virtual: true, path: '' }
+  item: null,          // { name, path, size, mtime, ctime }。貼り付けた画像は { virtual: true, path: '' }
   bmp: null, bw: 0, bh: 0, // 元の絵と、その大きさ
   edit: emptyEdit(),   // 編集の内容
   hist: [emptyEdit()], // 取り消し用の履歴
@@ -152,10 +153,10 @@ function stash() {
 }
 
 // 1 枚を画面に出す状態にする。bmp が null なら「開けなかった」。
-function setImage(item, bmp, w, h, anim = null) {
+function setImage(item, bmp, w, h, anim = null, info = null) {
   stash();
   stopAnim();
-  S.item = item; S.bmp = bmp; S.bw = w; S.bh = h; S.anim = anim;
+  S.item = item; S.bmp = bmp; S.bw = w; S.bh = h; S.anim = anim; S.info = info;
   const k = item && !item.virtual ? kept.get(item.path) : null;
   if (k) { S.edit = k.edit; S.hist = k.hist; S.hpos = k.hpos; }
   else { S.edit = emptyEdit(); S.hist = [emptyEdit()]; S.hpos = 0; }
@@ -166,6 +167,7 @@ function setImage(item, bmp, w, h, anim = null) {
   $('empty').hidden = !!item;
   rebuild(false);
   syncPanel();
+  drawInfo();
 }
 
 // フォルダが指している 1 枚を読んで出す
@@ -181,7 +183,7 @@ async function show() {
     S.loading = false;
     if (seq !== S.seq) return; // 読んでいる間に、別の画像へ送られた
     folder.pinned = item.path;
-    setImage(item, d.bitmap, d.width, d.height, d.anim);
+    setImage(item, d.bitmap, d.width, d.height, d.anim, d.info);
     folder.preload();
   } catch (err) {
     clearTimeout(slow);
@@ -739,6 +741,21 @@ function syncPanel() {
   updateUI();
 }
 
+// 画像の情報を左上に重ねる。出すかどうかは settings.info (画像を替えても、再起動しても、そのまま)
+function drawInfo() {
+  const el = $('info');
+  const on = settings.info && !!S.item && !!S.bmp;
+  el.hidden = !on;
+  if (!on) return;
+  const it = S.item;
+  el.textContent = formatInfo(S.info, {
+    name: it.name, path: it.virtual ? '' : it.path, width: S.bw, height: S.bh,
+    size: it.size, mtime: it.virtual ? 0 : it.mtime, ctime: it.ctime, frames: S.anim ? S.anim.frames : 0,
+  }, { gps: settings.infoGps }, fmtBytes).join('\n');
+}
+
+function toggleInfo() { settings.info = !settings.info; saveSettings(); drawInfo(); }
+
 let estTimer = 0, estSeq = 0;
 
 // 下の 1 行・窓の題名・ボタンの状態を更新する
@@ -762,7 +779,7 @@ function updateUI() {
     : S.anim ? `動く画像 (${S.anim.frames} コマ)${S.player ? '' : ' ／ 編集中は最初の 1 コマ'}`
     : '';
 
-  const title = it ? `${it.name}${it.virtual || !folder.count ? '' : ` [${folder.index + 1}/${folder.count}]`} - Lookover` : 'lookover';
+  const title = it ? `${it.name}${it.virtual || !folder.count ? '' : ` [${folder.index + 1}/${folder.count}]`} - Lookover` : 'Lookover';
   if (title !== updateUI.title) { updateUI.title = title; be.setTitle(title); }
 
   $('btn-undo').disabled = S.hpos <= 0;
@@ -915,6 +932,8 @@ function wirePanel() {
 
   $('set-confirm').value = settings.confirmDelete ? '1' : '0';
   $('set-confirm').addEventListener('change', () => { settings.confirmDelete = $('set-confirm').value === '1'; saveSettings(); });
+  $('set-gps').value = settings.infoGps ? '1' : '0';
+  $('set-gps').addEventListener('change', () => { settings.infoGps = $('set-gps').value === '1'; saveSettings(); drawInfo(); });
   $('set-wheel').value = settings.wheel;
   $('set-sort').value = settings.sort;
   $('set-wheel').addEventListener('change', () => { settings.wheel = $('set-wheel').value; saveSettings(); });
@@ -1061,6 +1080,8 @@ const HANDLERS = {
     S.showOriginal = true; rebuild(true);
   },
   help: () => showHelp(),
+  info: () => toggleInfo(),
+  quit: () => be.closeWindow(),
   open: () => pickAndOpen(),
   copy: () => copyImage(),
   rename: () => renameCurrent(),

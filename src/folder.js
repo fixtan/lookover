@@ -15,7 +15,7 @@ const PRELOAD_MAX = 40 * 1048576; // これより大きいファイルは先読�
 export class Folder {
   constructor() {
     this.dir = '';
-    this.items = [];   // 画像だけ。[{ name, path, size, mtime }]
+    this.items = [];   // 画像だけ。[{ name, path, size, mtime, ctime }]
     this.index = -1;
     this.sort = 'name'; // 'name' | 'mtime'
     this.cache = new Map(); // path → Promise<{ bitmap, width, height }>
@@ -37,7 +37,7 @@ export class Folder {
       this.index = this.items.findIndex((e) => e.path === path);
       // 一覧に無い (知らない拡張子) 場合も、そのファイルだけは開けるようにする
       if (this.index < 0) {
-        this.items.push({ name: info.name, path, size: info.size, mtime: info.mtime });
+        this.items.push({ name: info.name, path, size: info.size, mtime: info.mtime, ctime: info.ctime });
         this.order();
         this.index = this.items.findIndex((e) => e.path === path);
       }

@@ -41,7 +41,7 @@ export async function run(outPath, iv, args) {
       for (let i = 0; i < b.length; i++) if (b[i] !== data[i]) return false;
       return `${b.length} bytes`;
     });
-    await step('file_info: 大きさが取れる', async () => { const i = await be.fileInfo(jp); return i.size === 70000 && !i.isDir && i.mtime > 1e12 ? `mtime=${Math.round(i.mtime)}` : false; });
+    await step('file_info: 大きさが取れる', async () => { const i = await be.fileInfo(jp); return i.size === 70000 && !i.isDir && i.mtime > 1e12 && i.ctime >= 0 ? `mtime=${Math.round(i.mtime)} ctime=${Math.round(i.ctime)}` : false; });
     await step('list_dir: 一覧に入っている', async () => (await be.listDir(dir)).some((e) => e.name === '試験 テスト.bin'));
     await step('file_info: フォルダはフォルダと分かる', async () => (await be.fileInfo(dir)).isDir === true);
     await step('trash_file: ごみ箱へ送ると、無くなる', async () => { await be.trash(jp); return (await be.exists(jp)) === false; });

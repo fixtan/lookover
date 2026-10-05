@@ -963,6 +963,82 @@ section('WebP に書き出せない環境 (Mac / Linux の WebView)');
 }
 
 // ----------------------------------------------------------------------
+section('画像の情報 (I) と Ctrl+W');
+{
+  const ctx4 = await b.newContext({ viewport: { width: 1000, height: 700 } });
+  const q = await ctx4.newPage();
+  const qerr = [];
+  q.on('pageerror', (e) => qerr.push(String(e)));
+  await q.addInitScript(() => { window.close = () => { window.__closed = (window.__closed || 0) + 1; }; });
+  await q.goto('http://localhost:8770/?open=' + encodeURIComponent(F('info/photo_info.jpg')));
+  await q.waitForFunction(() => window.__iv && __iv.S.bmp, null, { timeout: 20000 });
+  const hidden = () => q.evaluate(() => document.getElementById('info').hidden);
+  const text = () => q.evaluate(() => document.getElementById('info').textContent);
+  ok(await hidden(), '最初は、情報を出さない');
+  await q.keyboard.press('i');
+  ok(!(await hidden()), 'I で、情報が出る');
+  let t = await text();
+  ok(/photo_info\.jpg/.test(t) && /300 × 200/.test(t) && /Canon EOS R6/.test(t) && /1\/250 秒/.test(t) && /ISO 400/.test(t), '名前・大きさ・カメラ・露出が出る');
+  ok(/撮影: 2026-10-04 12:34:56/.test(t) && /更新: \d{4}-\d\d-\d\d/.test(t) && /作成: \d{4}-/.test(t), '撮影・更新・作成の日時が出る');
+  ok(/位置: あり/.test(t) && !/35\.68/.test(t), '位置は「あり」とだけ出る (座標は出さない)');
+  const pos = await q.evaluate(() => { const r = document.getElementById('info').getBoundingClientRect(), s = document.getElementById('stage').getBoundingClientRect(); return [r.left - s.left, r.top - s.top]; });
+  ok(pos[0] < 20 && pos[1] < 20, '左上に出る: ' + pos.map(Math.round));
+  ok(await q.evaluate(() => __iv.settings.info === true && JSON.parse(localStorage.getItem('iv.settings.v1')).info === true), 'ON は設定に覚える');
+  // 画像を替えても出たまま、中身は替わる
+  await q.keyboard.press('ArrowRight');
+  await q.waitForFunction(() => __iv.S.item.name !== 'photo_info.jpg', null, { timeout: 10000 });
+  t = await text();
+  ok(!(await hidden()) && t.startsWith(await q.evaluate(() => __iv.S.item.name)), '画像を替えても出たまま、名前も替わる: ' + t.split('\n')[0]);
+  // 再起動しても出たまま
+  await q.goto('http://localhost:8770/?open=' + encodeURIComponent(F('info/photo_info.webp')));
+  await q.waitForFunction(() => window.__iv && __iv.S.bmp, null, { timeout: 20000 });
+  t = await text();
+  ok(!(await hidden()) && /WebP/.test(t) && /Canon EOS R6/.test(t), '開き直しても出たまま (WebP でも EXIF が読める)');
+  // 位置情報の設定
+  await q.evaluate(() => { const s = document.getElementById('set-gps'); s.value = '1'; s.dispatchEvent(new Event('change')); });
+  ok(/位置: 35\.68000, 139\.76000/.test(await text()), '設定を変えると、座標まで出る');
+  await q.evaluate(() => { const s = document.getElementById('set-gps'); s.value = '0'; s.dispatchEvent(new Event('change')); });
+  ok(!/35\.68/.test(await text()), '戻すと、また隠れる');
+  // PNG・EXIF なし・ごみのファイル
+  for (const n of ['info/photo_info.png', 'info/plain.jpg', 'alpha.png', 'sub/anim.gif']) {
+    await q.evaluate(async (p) => { await __iv.openPath(p); }, F(n));
+    await q.waitForFunction((n) => __iv.S.item && __iv.S.item.path.endsWith(n.split('/').pop()) && __iv.S.bmp, n, { timeout: 10000 });
+    ok(!(await hidden()) && (await text()).split('\n').length >= 2, n + ': 情報が出る (' + (await text()).split('\n')[1] + ')');
+    if (n === 'info/plain.jpg') ok(!/Canon|撮影:|位置:/.test(await text()), 'EXIF の無い写真には、撮影情報が出ない');
+  }
+  ok(/動く画像 3 コマ/.test(await text()), '動く GIF はコマ数が出る');
+  // 開けない画像・何も開いていないときは出さない
+  await q.evaluate(async (p) => { await __iv.openPath(p); }, F('broken.png'));
+  await q.waitForFunction(() => __iv.S.item && __iv.S.item.name === 'broken.png' && !__iv.S.bmp, null, { timeout: 10000 });
+  ok(await hidden(), '開けない画像では、情報を出さない');
+  // 編集中でも出ている / I でしまう
+  await q.evaluate(async (p) => { await __iv.openPath(p); }, F('img1.png'));
+  await q.waitForFunction(() => __iv.S.item && __iv.S.item.name === 'img1.png' && __iv.S.bmp, null, { timeout: 10000 });
+  const [bw, bh] = await q.evaluate(() => [__iv.S.bw, __iv.S.bh]);
+  await q.evaluate(() => __iv.doRotate(1));
+  ok(!(await hidden()) && (await text()).includes(`${bw} × ${bh}`) && bw !== bh, '回転しても、情報は元の大きさのまま出る: ' + JSON.stringify(await text()));
+  await q.keyboard.press('i');
+  ok(await hidden() && await q.evaluate(() => JSON.parse(localStorage.getItem('iv.settings.v1')).info === false), 'もう一度 I で消える (OFF も覚える)');
+  // 入力欄の中の I は、操作にならない
+  await q.evaluate(() => __iv.togglePanel(true));
+  await q.locator('#panel input[type=number], #panel input[type=text]').first().focus();
+  await q.keyboard.press('i');
+  ok(await hidden(), '入力欄に打った I では、情報は出ない');
+  await q.evaluate(() => document.activeElement.blur());
+  // 貼り付けた画像 (ファイルなし)
+  await q.evaluate(async () => { const c = new OffscreenCanvas(30, 20); c.getContext('2d').fillRect(0, 0, 30, 20); await __iv.openBlob(await c.convertToBlob(), '貼り付け.png'); });
+  await q.keyboard.press('i');
+  t = await text();
+  ok(!(await hidden()) && /貼り付け\.png/.test(t) && /30 × 20/.test(t) && !/場所:/.test(t), '貼り付けた画像でも出る (場所の行は無い)');
+  // Ctrl+W
+  await q.keyboard.press('Control+w');
+  ok(await q.evaluate(() => window.__closed === 1), 'Ctrl+W で、窓を閉じる');
+  ok(await q.evaluate(() => /Lookover/.test(document.title)), '窓の題名は Lookover');
+  ok(qerr.length === 0, '情報まわりのエラーなし' + (qerr.length ? ': ' + qerr.join(' | ') : ''));
+  await ctx4.close();
+}
+
+// ----------------------------------------------------------------------
 section('パスの扱い (Windows の形も)');
 {
   const r = await ev(async () => {

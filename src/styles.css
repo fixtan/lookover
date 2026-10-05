@@ -98,6 +98,8 @@ label.inline { color: var(--dim); font-size: 12px; display: flex; gap: 6px; alig
 #status span:empty { display: none; }
 
 /* ---- お知らせ (右下に出て、数秒で消える) ---- */
+#info { position: absolute; left: 10px; top: 10px; margin: 0; max-width: calc(100% - 20px); padding: 8px 10px; border-radius: 6px; background: rgba(0,0,0,.62); color: #fff; font: 12px/1.55 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; text-shadow: 0 1px 1px #000; pointer-events: none; user-select: none; }
+#info[hidden] { display: none; }
 #toasts { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; pointer-events: none; }
 .toast { background: rgba(20, 24, 30, 0.94); border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 6px 10px; border-radius: 3px; max-width: 420px; white-space: pre-wrap; user-select: text; }
 .toast.err { border-left-color: #ffb020; }
