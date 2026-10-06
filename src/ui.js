@@ -2,7 +2,7 @@
 
 import { FORMATS } from './export.js';
 import { defaultPresets } from './settings.js';
-import { ACTION_TABLE, GROUPS, bindingsOf, labelOf, isCustom, specOf, addBinding, removeBinding, resetBindings, actionById } from './keys.js';
+import { ACTION_TABLE, GROUPS, bindingsOf, labelOf, isCustom, specOf, addBinding, removeBinding, resetBindings, actionById, wheelSpec, mouseSpec, KEY_ONLY } from './keys.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -103,10 +103,9 @@ export function promptBox({ title, text = '', value = '', ok = '決定', cancel 
 // 割り当てを変えられない操作 (マウスや、固定のキー)
 const HELP_FIXED = {
   '見る': [
-    ['ホイール', '前の画像・次の画像 (設定で拡大・縮小にもできる)'],
-    ['Ctrl + ホイール', '拡大・縮小'],
+    ['Ctrl + ホイール', '拡大・縮小 (割り当てが無いとき)'],
     ['ダブルクリック', '全体 ⇔ 等倍'],
-    ['ドラッグ', '拡大中に、ずらす'],
+    ['ドラッグ・中ボタンのドラッグ', '拡大中に、ずらす'],
     ['下の % をクリック', '全体 ⇔ 等倍'],
   ],
   '開く・消す': [['Ctrl + V', 'クリップボードの画像を開く']],
@@ -149,7 +148,7 @@ export function showHelp() {
       cols.append(sec);
     }
     box.append(cols, el('div', { className: 'row' },
-      el('button', { textContent: 'キーを変える', onclick: () => { close(null); editKeys(); } }),
+      el('button', { textContent: 'キー・マウスを変える', onclick: () => { close(null); editKeys(); } }),
       el('button', { textContent: '閉じる', className: 'primary', onclick: () => close(null) })));
     box.onEnter = () => close(null);
   });
@@ -164,9 +163,24 @@ export const setKeysHook = (fn) => { onKeysChanged = fn; };
 
 export async function editKeys() {
   let changed = false;
+  let removeMouse = () => {};
   const r = await openModal((box, close) => {
     const body = el('div', { className: 'keys-body' });
-    const note = el('p', { className: 'key-note', textContent: '「＋」を押してから、割り当てたいキーを押す。Esc で取りやめ。他の操作が使っているキーを選ぶと、そちらから外れる。' });
+    const note = el('p', { className: 'key-note', textContent: '「＋」を押してから、割り当てたいキーを押す。マウスのホイールを回す・中ボタンや横ボタンを押す、でもよい (左ボタンは使えない)。Esc で取りやめ。他の操作が使っているものを選ぶと、そちらから外れる。' });
+
+    // 「＋」を押したあとに来たマウスの動きを、割り当て待ちの処理へ渡す。キーは onKey (openModal) が渡す。
+    const onMouse = (e) => {
+      const spec = e.type === 'wheel' ? wheelSpec(e) : mouseSpec(e); // 左ボタンは null
+      if (!spec) return;
+      const aux = e.type === 'mousedown' || e.type === 'auxclick';
+      if (aux) e.preventDefault(); // 中ボタンの自動スクロールなどを出さない
+      if (aux || !box.capture || !box.captureMouse) return; // 登録は pointerdown とホイールで受ける
+      e.preventDefault(); e.stopPropagation();
+      box.captureMouse(spec);
+    };
+    const mouseEvents = ['wheel', 'pointerdown', 'mousedown', 'auxclick'];
+    for (const t of mouseEvents) window.addEventListener(t, onMouse, { capture: true, passive: false });
+    removeMouse = () => { for (const t of mouseEvents) window.removeEventListener(t, onMouse, true); };
 
     const draw = () => {
       body.textContent = '';
@@ -183,18 +197,28 @@ export async function editKeys() {
           }
           const add = el('button', { className: 'key-add', title: 'キーを足す', textContent: '＋' });
           add.onclick = () => {
-            add.textContent = 'キーを押す…';
+            add.textContent = 'キー・マウス…';
             add.classList.add('waiting');
-            box.capture = (e) => {
-              const spec = specOf(e);
-              if (spec === null) return; // Ctrl だけ、などは待ち続ける
-              if (spec === 'Escape') { box.capture = null; draw(); return; }
-              box.capture = null;
+            const finish = () => { box.capture = null; box.captureMouse = null; };
+            const accept = (spec, mouse) => {
+              finish();
+              if (mouse && KEY_ONLY.has(a.id)) {
+                draw();
+                note.textContent = `「${a.label}」は、押している間だけ効く操作なので、キーだけにしか割り当てられない。`;
+                return;
+              }
               const from = addBinding(a.id, spec);
               changed = true;
               draw();
               if (from) note.textContent = `「${labelOf(spec)}」は「${actionById(from).label}」から外して、「${a.label}」にした。`;
             };
+            box.capture = (e) => {
+              const spec = specOf(e);
+              if (spec === null) return; // Ctrl だけ、などは待ち続ける
+              if (spec === 'Escape') { finish(); draw(); return; }
+              accept(spec, false);
+            };
+            box.captureMouse = (spec) => accept(spec, true);
           };
           cell.append(add);
           row.append(cell);
@@ -205,13 +229,14 @@ export async function editKeys() {
     draw();
 
     box.append(
-      el('h2', { textContent: 'キーの設定' }), note, body,
+      el('h2', { textContent: 'キー・マウスの設定' }), note, body,
       el('div', { className: 'row' },
         el('button', { textContent: '最初の状態に戻す', onclick: () => { resetBindings(); changed = true; draw(); } }),
         el('button', { textContent: '閉じる', className: 'primary', onclick: () => close(changed) })),
     );
     box.onEnter = null;
   });
+  removeMouse();
   onKeysChanged();
   return r;
 }

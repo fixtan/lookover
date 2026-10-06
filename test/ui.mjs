@@ -102,13 +102,13 @@ section('フォルダと送り');
   await p.waitForFunction(() => __iv.S.item.name === 'grad.png' && __iv.S.bmp);
   ok(true, '壊れた画像の次へ送れる');
 
-  // ホイール
+  // ホイール (最初の割り当ては、拡大・縮小。画像は送らない)
   await p.mouse.move(400, 300);
-  await p.mouse.wheel(0, 100);
-  await p.waitForFunction(() => __iv.S.item.name === 'img1.png' && __iv.S.bmp);
   await p.mouse.wheel(0, -100);
-  await p.waitForFunction(() => __iv.S.item.name === 'grad.png' && __iv.S.bmp);
-  ok(true, 'ホイールで前後に送れる');
+  ok(await ev(() => __iv.S.item.name === 'grad.png' && !__iv.view.fitMode), 'ホイールを奥へ回すと、送らずに拡大する');
+  const zIn = await ev(() => __iv.view.scale);
+  await p.mouse.wheel(0, 100);
+  ok(await ev((z) => __iv.S.item.name === 'grad.png' && __iv.view.scale < z, zIn), 'ホイールを手前へ回すと、縮小する');
 
   // フォルダを開く
   await open('sub', 'anim.gif');
@@ -844,12 +844,6 @@ section('設定');
   const r = await ev(() => ({ cur: __iv.S.item.name, at: __iv.folder.items[__iv.folder.index].name, m: __iv.folder.items.map((i) => i.mtime) }));
   ok(r.cur === 'grad.png' && r.at === 'grad.png' && r.m.every((v, i) => i === 0 || r.m[i - 1] >= v), '並び順を「新しい順」にしても、見ている画像はそのまま');
   await p.selectOption('#set-sort', 'name');
-  // ホイールを「拡大・縮小」に
-  await p.selectOption('#set-wheel', 'zoom');
-  await p.mouse.move(400, 300);
-  await p.mouse.wheel(0, -100);
-  ok(await ev(() => __iv.S.item.name === 'grad.png' && !__iv.view.fitMode), 'ホイールを「拡大・縮小」にすると、送らずに拡大する');
-  await p.selectOption('#set-wheel', 'nav');
 }
 
 // ----------------------------------------------------------------------
@@ -879,9 +873,9 @@ section('キーの割り当て');
   // F1 → 「キーを変える」
   await p.keyboard.press('F1');
   await p.waitForFunction(() => !document.getElementById('modal').hidden);
-  await p.click('#modal-box button:has-text("キーを変える")');
+  await p.click('#modal-box button:has-text("キー・マウスを変える")');
   await p.waitForSelector('.key-row');
-  ok(/キーの設定/.test(await modalText()), 'F1 → 「キーを変える」で、設定画面が出る');
+  ok(/マウスの設定/.test(await modalText()), 'F1 → 「キー・マウスを変える」で、設定画面が出る');
 
   // 右回転に Alt + X を足す
   await row('右へ 90 度').locator('.key-add').click();
@@ -927,7 +921,7 @@ section('キーの割り当て');
   await p.keyboard.press('F1');
   await p.waitForFunction(() => !document.getElementById('modal').hidden);
   ok(/Alt \+ X/.test(await modalText()), '操作の一覧にも、変えたキーが出る');
-  await p.click('#modal-box button:has-text("キーを変える")');
+  await p.click('#modal-box button:has-text("キー・マウスを変える")');
   await p.waitForSelector('.key-row');
   await p.click('#modal-box button:has-text("最初の状態に戻す")');
   await p.click('#modal-box button:has-text("閉じる")');
@@ -937,6 +931,104 @@ section('キーの割り当て');
   await ev(() => __iv.resetAll());
   await p.keyboard.press('Alt+X');
   ok(await ev(() => __iv.S.edit.rot === 0), '足したキーは、もう効かない');
+  ok(await ev(() => Object.keys(JSON.parse(localStorage.getItem('iv.settings.v1')).keys).length === 0), '設定の中身も、空に戻る');
+}
+
+// ----------------------------------------------------------------------
+section('マウスの割り当て');
+{
+  const modalText = () => ev(() => document.getElementById('modal').hidden ? '' : document.getElementById('modal-box').textContent);
+  const row = (label) => p.locator('.key-row', { hasText: label }).first();
+  const rowHas = (label, re) => p.waitForFunction(([l, s]) => [...document.querySelectorAll('.key-row')].some((r) => r.textContent.includes(l) && new RegExp(s).test(r.textContent)), [label, re]);
+  const note = () => ev(() => document.querySelector('.key-note').textContent);
+  const name = () => ev(() => __iv.S.item.name);
+  await p.goto('http://localhost:8770/?open=' + encodeURIComponent(F('grad.png')));
+  await p.waitForFunction(() => window.__iv && __iv.S.bmp);
+  await ev(() => __iv.resetAll());
+  await ev(() => { if (document.getElementById('panel').hidden) __iv.togglePanel(true); });
+
+  // 設定パネルのボタンから開く。最初の割り当てに、ホイールが載っている
+  await p.click('#panel button[data-act="keys"]');
+  await p.waitForSelector('.key-row');
+  ok(/マウスの設定/.test(await modalText()), '設定パネルの「キー・マウスの設定」から、設定画面が出る');
+  ok(/ホイール↑/.test(await row('拡大').textContent()) && /ホイール↓/.test(await row('縮小').textContent()), '最初の割り当てでは、ホイール↑が拡大、ホイール↓が縮小');
+
+  // ホイール↓ を「次の画像」、ホイール↑ を「前の画像」に (縮小・拡大からは外れる)
+  await row('次の画像').locator('.key-add').click();
+  await p.mouse.move(600, 400);
+  await p.mouse.wheel(0, 100);
+  await rowHas('次の画像', 'ホイール↓');
+  ok(/「ホイール↓」は「縮小」から外して/.test(await note()), 'ホイールを割り当てると、使っていた操作 (縮小) から外れて、そう知らせる');
+  await row('前の画像').locator('.key-add').click();
+  await p.mouse.wheel(0, -100);
+  await rowHas('前の画像', 'ホイール↑');
+
+  // 戻るボタン (3 番目のボタン) を「最初の画像」、中ボタンを「最後の画像」に。戻るボタンは、本物を送れないので、同じ形の合成イベントで。
+  await row('最初の画像').locator('.key-add').click();
+  await ev(() => window.dispatchEvent(new PointerEvent('pointerdown', { button: 3, bubbles: true, cancelable: true })));
+  await rowHas('最初の画像', '戻るボタン');
+  await row('最後の画像').locator('.key-add').click();
+  await p.mouse.down({ button: 'middle' });
+  await p.mouse.up({ button: 'middle' });
+  await rowHas('最後の画像', '中ボタン');
+  ok(true, 'ホイール・戻るボタン・中ボタンを、割り当てられる');
+
+  // Ctrl + ホイール↑ も別に割り当てられる (修飾キーは、キーと同じ)
+  await row('等倍').locator('.key-add').click();
+  await p.keyboard.down('Control');
+  await p.mouse.wheel(0, -100);
+  await p.keyboard.up('Control');
+  await rowHas('等倍', 'Ctrl \\+ ホイール↑');
+  ok(true, 'Ctrl を押しながらのホイールも、別の割り当てになる');
+
+  // 押している間だけ効く操作は、マウスに割り当てられない
+  await row('押している間').locator('.key-add').click();
+  await p.mouse.wheel(0, 100);
+  await p.waitForFunction(() => /キーだけ/.test(document.querySelector('.key-note').textContent));
+  ok(!/ホイール/.test(await row('押している間').textContent()), '「押している間、元の絵を見る」は、マウスに割り当てられない');
+  await p.click('#modal-box button:has-text("閉じる")');
+  await p.waitForFunction(() => document.getElementById('modal').hidden);
+
+  // 効いているか
+  // (先の試験が書き出したファイルも同じフォルダにあるので、次の画像の名前は、フォルダの並びから取る)
+  const nextName = await ev(() => __iv.folder.items[__iv.folder.index + 1].name);
+  await p.mouse.move(400, 300);
+  await p.mouse.wheel(0, 100);
+  await p.waitForFunction((n) => __iv.S.item.name === n && __iv.S.bmp, nextName);
+  await p.mouse.wheel(0, -100);
+  await p.waitForFunction(() => __iv.S.item.name === 'grad.png' && __iv.S.bmp);
+  ok(nextName !== 'grad.png', 'ホイール↓で次の画像、ホイール↑で前の画像へ送れる');
+  await ev(() => document.getElementById('view').dispatchEvent(new PointerEvent('pointerdown', { button: 3, bubbles: true, cancelable: true, clientX: 400, clientY: 300 })));
+  await p.waitForFunction(() => __iv.S.item.name === __iv.folder.items[0].name && __iv.S.bmp);
+  ok(true, '戻るボタンで、最初の画像へ移る');
+  await p.mouse.down({ button: 'middle' });
+  await p.mouse.up({ button: 'middle' });
+  await p.waitForFunction(() => __iv.S.item.name === __iv.folder.items[__iv.folder.count - 1].name && __iv.S.bmp);
+  ok(true, '中ボタンをそのまま離すと (ずらさずに)、最後の画像へ移る');
+  // Ctrl + ホイール↑ には別の割り当て (等倍) があるので、拡大ではなく、そちらが効く。
+  // 割り当てが無い Ctrl + ホイール↓ は、ふつうに縮小する (ピンチと同じ)。
+  const imgName = await name();
+  await p.keyboard.down('Control');
+  await p.mouse.wheel(0, -100);
+  await p.keyboard.up('Control');
+  ok(await ev(() => Math.abs(__iv.view.scale - __iv.view.actual) < 1e-9), 'Ctrl + ホイール↑ は、割り当てた「等倍」が効く');
+  await p.keyboard.down('Control');
+  await p.mouse.wheel(0, 100);
+  await p.keyboard.up('Control');
+  ok(await ev((n) => __iv.S.item.name === n && __iv.view.scale < __iv.view.actual, imgName), '割り当てが無い Ctrl + ホイール↓ は、送らずにふつうに縮小する');
+
+  // 最初の状態に戻す → ホイールは、また拡大・縮小
+  await p.keyboard.press('F1');
+  await p.waitForFunction(() => !document.getElementById('modal').hidden);
+  await p.click('#modal-box button:has-text("キー・マウスを変える")');
+  await p.waitForSelector('.key-row');
+  await p.click('#modal-box button:has-text("最初の状態に戻す")');
+  await p.click('#modal-box button:has-text("閉じる")');
+  await p.waitForFunction(() => document.getElementById('modal').hidden);
+  await p.mouse.move(400, 300);
+  const nb = await name();
+  await p.mouse.wheel(0, -100);
+  ok(await ev((n) => __iv.S.item.name === n && !__iv.view.fitMode, nb), '最初の状態に戻すと、ホイールは、また拡大・縮小になる');
   ok(await ev(() => Object.keys(JSON.parse(localStorage.getItem('iv.settings.v1')).keys).length === 0), '設定の中身も、空に戻る');
 }
 

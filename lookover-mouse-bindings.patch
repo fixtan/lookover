@@ -1,0 +1,553 @@
+diff --git a/DESIGN.md b/DESIGN.md
+index 1d0bcc9..f4badbb 100644
+--- a/DESIGN.md
++++ b/DESIGN.md
+@@ -26,7 +26,7 @@ test/           開発用サーバーと自動試験
+ | `export.js` | 形式、エンコード、重ならない名前 |
+ | `anim.js` | 動く GIF / WebP の再生 (ImageDecoder) |
+ | `info.js` | 画像の情報 (`I` で左上に重ねる)。ファイルの先頭 512 KB から、形式のヘッダーと EXIF を自前で読む純粋な関数。画面にも Rust にも触らない (`test/info.mjs` が node で試す) |
+-| `keys.js` | キーの割り当ての表 (処理の名前 ↔ キー)。押されたキーの判定、付け替え、保存 |
++| `keys.js` | キーとマウスの割り当ての表 (処理の名前 ↔ キー・ホイール・ボタン)。押されたものの判定、付け替え、保存 |
+ | `settings.js` `ui.js` | 設定 (localStorage)、お知らせ・確認・入力の枠 |
+ | `selftest.js` | アプリ本体の中で走る試験 (`--selftest=<結果の json>` で起動したときだけ) |
+ 
+@@ -49,6 +49,8 @@ test/           開発用サーバーと自動試験
+ 
+ キー処理は `keys.js` の表 (ACTION_TABLE) が元。`main.js` の HANDLERS (処理の名前 → 関数) とは名前でつながる。
+ F1 の一覧、キーの設定画面、ボタンの吹き出し、ワンキー書き出しのボタンの札は、すべてこの表から作る。
++マウスも同じ表に載る。ホイールは `WheelUp` `WheelDown` `WheelLeft` `WheelRight`、ボタンは `MouseMiddle` `MouseRight` `MouseBack` `MouseForward` (それより先は `Mouse5` …)、修飾キーは `Ctrl+WheelUp` のようにキーと同じ書き方。左ボタンはドラッグや道具に使うので割り当てない。「押している間だけ効く」操作 (`KEY_ONLY`) は、離したことをマウスでは拾えないので、キーだけ。
++
+ 変えた分だけを `settings.keys` に覚える (最初の割り当てと同じに戻したら、覚えから消す)。
+ 英字と数字は `event.code` (キーの位置) で決めるので、日本語配列でも英語配列でも同じ。記号は出る文字で決め、Shift は付けない。
+ 固定のもの (Esc、Ctrl + V、切り抜き中の矢印) は表に入れない。
+diff --git a/README.ja.md b/README.ja.md
+index 4f4375c..5f41712 100644
+--- a/README.ja.md
++++ b/README.ja.md
+@@ -34,7 +34,7 @@
+ - 名前の変更 (<kbd>F2</kbd>)、ごみ箱へ (<kbd>Delete</kbd>、確認は切れる)、エクスプローラーで場所を開く
+ - ドロップで開く。2 つ目を起動しても、動いている窓で開く
+ - **画像の情報を重ねて出す** (<kbd>I</kbd>): 左上に、大きさ・形式・容量・撮影日時・カメラ・露出・更新日時などを出す。出したままにしておける (画像を替えても、再起動しても)。位置情報は、設定で選ばない限り「あり」とだけ出す
+-- **キーは全部付け替えられる** (<kbd>F1</kbd> →「キーを変える」)。<kbd>F1</kbd> で操作の一覧も出る
++- **キーは全部付け替えられる** (<kbd>F1</kbd> →「キーを変える」)。マウスも同じ表で割り当てられる: ホイール (↑・↓・横)、中・右ボタン、戻る・進むの横ボタン。ホイールは、最初は拡大・縮小。<kbd>F1</kbd> で操作の一覧も出る
+ 
+ 対応形式: PNG / JPEG / WebP / GIF / BMP / AVIF / ICO / SVG
+ 
+diff --git a/README.md b/README.md
+index e276850..10445c7 100644
+--- a/README.md
++++ b/README.md
+@@ -34,7 +34,7 @@ I built it for myself as a replacement for Honeyview, because I was tired of ope
+ - Rename (<kbd>F2</kbd>), move to Recycle Bin (<kbd>Delete</kbd>, confirmation can be turned off), reveal in Explorer
+ - Drag and drop to open. Opening a second image reuses the running window
+ - **Image info overlay** (<kbd>I</kbd>): size, format, file size, shooting date, camera, exposure, modified date at the top left. It stays on across images and restarts. GPS coordinates stay hidden ("あり" only) unless you turn them on in settings
+-- **Every shortcut can be rebound** (<kbd>F1</kbd> → "キーを変える"). <kbd>F1</kbd> also shows the full list
++- **Every shortcut can be rebound** (<kbd>F1</kbd> → "キーを変える"), and so can the mouse: the wheel (up / down / tilt), the middle / right button and the Back / Forward side buttons. By default the wheel zooms. <kbd>F1</kbd> also shows the full list
+ 
+ Supported files: PNG, JPEG, WebP, GIF, BMP, AVIF, ICO, SVG.
+ 
+diff --git a/src/index.html b/src/index.html
+index a0be6ca..d6fd26b 100644
+--- a/src/index.html
++++ b/src/index.html
+@@ -144,14 +144,6 @@
+ 
+       <section>
+         <h2>設定</h2>
+-        <div class="row">
+-          <label class="inline grow">ホイール
+-            <select id="set-wheel" class="grow">
+-              <option value="nav">前後の画像へ</option>
+-              <option value="zoom">拡大・縮小</option>
+-            </select>
+-          </label>
+-        </div>
+         <div class="row">
+           <label class="inline grow">並び順
+             <select id="set-sort" class="grow">
+@@ -178,7 +170,7 @@
+         </div>
+         <div class="row">
+           <button data-act="help" title="F1">操作の一覧</button>
+-          <button data-act="keys">キーの設定</button>
++          <button data-act="keys" title="キーやマウスのホイール・ボタンに、操作を割り当てる">キー・マウスの設定</button>
+         </div>
+       </section>
+     </aside>
+diff --git a/src/keys.js b/src/keys.js
+index 190d9d9..6000efd 100644
+--- a/src/keys.js
++++ b/src/keys.js
+@@ -21,8 +21,8 @@ export const ACTION_TABLE = [
+   { id: 'prev', group: '見る', label: '前の画像', keys: ['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'] },
+   { id: 'first', group: '見る', label: '最初の画像', keys: ['Home'] },
+   { id: 'last', group: '見る', label: '最後の画像', keys: ['End'] },
+-  { id: 'zoomIn', group: '見る', label: '拡大', keys: ['+', ';', '='] },
+-  { id: 'zoomOut', group: '見る', label: '縮小', keys: ['-'] },
++  { id: 'zoomIn', group: '見る', label: '拡大', keys: ['+', ';', '=', 'WheelUp'] },
++  { id: 'zoomOut', group: '見る', label: '縮小', keys: ['-', 'WheelDown'] },
+   { id: 'fit', group: '見る', label: '全体を表示 (窓に合わせる)', keys: ['0', 'F', 'Ctrl+0'] },
+   { id: 'actual', group: '見る', label: '等倍 (100%)', keys: ['1'] },
+   { id: 'full', group: '見る', label: '全画面 (切り抜き中は「決定」)', keys: ['Enter', 'F11'] },
+@@ -91,6 +91,55 @@ export function specOf(e) {
+   return [...mods, b].join('+');
+ }
+ 
++// ---- マウス ----
++//
++// マウスの動きも、キーと同じ「文字列」で表して、同じ表 (ACTION_TABLE) に割り当てる。
++//   ホイール: 'WheelUp' (奥へ回す)、'WheelDown' (手前へ回す)、'WheelLeft' / 'WheelRight' (横に倒す)
++//   ボタン  : 'MouseMiddle' (中)、'MouseRight' (右)、'MouseBack' (戻る)、'MouseForward' (進む)、
++//             それより先のボタンは 'Mouse5', 'Mouse6' …
++//   修飾キーは、キーと同じ。例: 'Ctrl+WheelUp'、'Shift+MouseBack'
++//   左ボタンは、ドラッグや道具に使うので、割り当てられない。
++const MOUSE_BUTTONS = { 1: 'MouseMiddle', 2: 'MouseRight', 3: 'MouseBack', 4: 'MouseForward' };
++
++function modsOf(e) {
++  const mods = [];
++  if (e.ctrlKey || e.metaKey) mods.push('Ctrl');
++  if (e.altKey) mods.push('Alt');
++  if (e.shiftKey) mods.push('Shift');
++  return mods;
++}
++
++// ホイールの向き。縦の動きの方が大きければ縦、そうでなければ横。動いていなければ null。
++export function wheelDir(e) {
++  const x = e.deltaX || 0, y = e.deltaY || 0;
++  if (!x && !y) return null;
++  if (Math.abs(y) >= Math.abs(x)) return y < 0 ? 'WheelUp' : 'WheelDown';
++  return x < 0 ? 'WheelLeft' : 'WheelRight';
++}
++
++export function wheelSpec(e) {
++  const d = wheelDir(e);
++  return d && [...modsOf(e), d].join('+');
++}
++
++// 左ボタン (0) は null
++export function mouseSpec(e) {
++  if (e.button === 0) return null;
++  const name = MOUSE_BUTTONS[e.button] || 'Mouse' + e.button;
++  return [...modsOf(e), name].join('+');
++}
++
++// 押している間だけ効く操作は、マウスには割り当てられない (離したことを、キーのようには拾えない)
++export const KEY_ONLY = new Set(['original']);
++
++export const isMouseSpec =(spec) => /(^|\+)(Wheel(Up|Down|Left|Right)|Mouse[A-Za-z0-9]+)$/.test(spec);
++
++const MOUSE_NAMES = {
++  WheelUp: 'ホイール↑', WheelDown: 'ホイール↓', WheelLeft: 'ホイール←', WheelRight: 'ホイール→',
++  MouseMiddle: '中ボタン', MouseRight: '右ボタン', MouseBack: '戻るボタン', MouseForward: '進むボタン',
++};
++const mouseName = (n) => MOUSE_NAMES[n] || (/^Mouse\d+$/.test(n) ? 'ボタン' + (Number(n.slice(5)) + 1) : null);
++
+ // 'Ctrl+Shift+S' → 'Ctrl + Shift + S'。矢印は記号で。
+ const NAMES = { ArrowRight: '→', ArrowLeft: '←', ArrowUp: '↑', ArrowDown: '↓', Space: 'Space', ' ': 'Space' };
+ export function labelOf(spec) {
+@@ -98,7 +147,7 @@ export function labelOf(spec) {
+   const out = [];
+   let rest = spec;
+   for (const m of ['Ctrl+', 'Alt+', 'Shift+']) if (rest.startsWith(m) && rest.length > m.length) { out.push(m.slice(0, -1)); rest = rest.slice(m.length); }
+-  out.push(NAMES[rest] || rest);
++  out.push(NAMES[rest] || mouseName(rest) || rest);
+   return out.join(' + ');
+ }
+ 
+diff --git a/src/main.js b/src/main.js
+index 04d0585..a04fb76 100644
+--- a/src/main.js
++++ b/src/main.js
+@@ -25,7 +25,7 @@ import { FORMATS, formatOfExt, encode, usableFormat, uniquePath, fmtBytes } from
+ import { settings, saveSettings } from './settings.js';
+ import { toast, confirmBox, promptBox, showHelp, editKeys, setKeysHook, editPresets, modalOpen } from './ui.js';
+ import { Player } from './anim.js';
+-import { specOf, baseKey, actionFor, bindingsOf, firstLabel } from './keys.js';
++import { specOf, baseKey, actionFor, bindingsOf, firstLabel, wheelSpec, wheelDir, mouseSpec, KEY_ONLY } from './keys.js';
+ 
+ const $ = (id) => document.getElementById(id);
+ const cv = $('view');
+@@ -934,9 +934,7 @@ function wirePanel() {
+   $('set-confirm').addEventListener('change', () => { settings.confirmDelete = $('set-confirm').value === '1'; saveSettings(); });
+   $('set-gps').value = settings.infoGps ? '1' : '0';
+   $('set-gps').addEventListener('change', () => { settings.infoGps = $('set-gps').value === '1'; saveSettings(); drawInfo(); });
+-  $('set-wheel').value = settings.wheel;
+   $('set-sort').value = settings.sort;
+-  $('set-wheel').addEventListener('change', () => { settings.wheel = $('set-wheel').value; saveSettings(); });
+   $('set-sort').addEventListener('change', async () => {
+     settings.sort = folder.sort = $('set-sort').value;
+     saveSettings();
+@@ -971,13 +969,32 @@ const local = (e) => {
+   return { x: e.clientX - r.left, y: e.clientY - r.top };
+ };
+ 
++// マウスのボタンに割り当てた操作を実行する。実行したら true。
++// 割り当ては、キーと同じ表 (keys.js) にある。「押している間だけ」の操作は、マウスでは使えない。
++function runMouse(e) {
++  const spec = mouseSpec(e), id = spec && actionFor(spec);
++  if (!id || KEY_ONLY.has(id) || !HANDLERS[id]) return false;
++  if (HANDLERS[id](e) !== false) e.preventDefault();
++  return true;
++}
++
++// 拡大・縮小。マウスのときは、指している場所を中心にする (ホイールは少し小さめの刻み)。
++function zoomStep(factor, e) {
++  if (e && e.target === cv && (e.type === 'wheel' || e.type.startsWith('pointer'))) {
++    const p = local(e);
++    view.zoomBy(e.type === 'wheel' ? (factor > 1 ? 1.2 : 1 / 1.2) : factor, p.x, p.y);
++  } else view.zoomBy(factor);
++}
++
+ function wirePointer() {
+   cv.addEventListener('pointerdown', (e) => {
+-    if (!S.out || e.button === 2) return;
++    // 戻る・進むなど、3 番目より先のボタン。押したらすぐ実行する (ドラッグには使わない)
++    if (e.button >= 3) { e.preventDefault(); if (S.out) runMouse(e); return; }
++    if (!S.out || e.button === 2) return; // 右ボタンは、離したときに実行する (下)
+     const p = local(e);
+     cv.setPointerCapture(e.pointerId);
+-    // 中ボタンは、どの道具を使っていても「ずらす」
+-    if (e.button === 1) { e.preventDefault(); S.drag = { kind: 'pan', x: e.clientX, y: e.clientY }; }
++    // 中ボタンは、どの道具を使っていても「ずらす」。動かさずに離したら、割り当てた操作になる。
++    if (e.button === 1) { e.preventDefault(); S.drag = { kind: 'pan', x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY }; }
+     else if (S.tool === 'crop') { crop.down(p.x, p.y); S.drag = { kind: 'crop' }; }
+     else if (isMarkTool()) markDown(p.x, p.y);
+     else if (view.pannable) S.drag = { kind: 'pan', x: e.clientX, y: e.clientY };
+@@ -996,16 +1013,23 @@ function wirePointer() {
+     else markMove(p.x, p.y);
+   });
+ 
+-  const end = () => {
++  const end = (e) => {
+     const d = S.drag;
+     if (!d) return;
+     cv.classList.remove('grabbing');
+     if (d.kind === 'crop') { S.drag = null; crop.up(); }
+-    else if (d.kind === 'pan') { S.drag = null; updateUI(); }
++    else if (d.kind === 'pan') {
++      S.drag = null; updateUI();
++      // 中ボタンを、ほとんど動かさずに離した = クリック
++      if (e.type === 'pointerup' && e.button === 1 && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) runMouse(e);
++    }
+     else markUp();
+   };
+   cv.addEventListener('pointerup', end);
+   cv.addEventListener('pointercancel', end);
++  cv.addEventListener('pointerup', (e) => { if (e.button === 2 && S.out) runMouse(e); });
++  // 戻る・進むボタンで、ブラウザの「戻る」「進む」が動かないようにする
++  for (const t of ['mouseup', 'mousedown', 'auxclick']) cv.addEventListener(t, (e) => { if (e.button >= 3) e.preventDefault(); });
+ 
+   // 下の「72%」を押すと、全体 ⇔ 等倍 (ダブルクリックと同じ)
+   $('st-zoom').addEventListener('click', () => {
+@@ -1025,19 +1049,28 @@ function wirePointer() {
+     else if (view.fitScale() < one) view.zoomTo(one, p.x, p.y);
+   });
+ 
+-  // ホイール。ふだんは前後の画像へ送る。Ctrl を押しているとき・道具を使っているときは拡大。
+-  let acc = 0;
++  // ホイール。割り当て (keys.js) どおりに動く。ふだんは拡大・縮小。
++  // 割り当てが無くても、Ctrl + ホイール (タッチパッドのピンチも同じ) と、道具を使っている間の縦ホイールは拡大・縮小。
++  // タッチパッドは細かい値が何度も来るので、ためてから 1 回ぶん動かす。
++  let acc = 0, accDir = null;
+   cv.addEventListener('wheel', (e) => {
+     e.preventDefault();
+     if (!S.out) return;
+-    if (e.ctrlKey || S.tool || settings.wheel === 'zoom') {
++    const dir = wheelDir(e);
++    if (!dir) return;
++    // Shift や Alt を押していて、その組み合わせに割り当てが無ければ、ただのホイールとして扱う
++    const spec = wheelSpec(e), id = actionFor(spec) || (e.ctrlKey || e.metaKey ? null : actionFor(dir));
++    const vertical = dir === 'WheelUp' || dir === 'WheelDown';
++    const zoomDir = () => {
+       const p = local(e);
+-      view.zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, p.x, p.y);
+-      return;
+-    }
+-    // タッチパッドは細かい値が何度も来るので、ためてから 1 枚送る
+-    acc += e.deltaY;
+-    if (Math.abs(acc) >= 50) { go(acc > 0 ? 1 : -1); acc = 0; }
++      view.zoomBy(dir === 'WheelUp' ? 1.2 : 1 / 1.2, p.x, p.y);
++    };
++    if (vertical && (S.tool || (!id && e.ctrlKey))) { zoomDir(); return; }
++    if (!id || KEY_ONLY.has(id) || !HANDLERS[id]) return;
++    // 向きが変わったら、ためた分は捨てる
++    if (dir !== accDir) { acc = 0; accDir = dir; }
++    acc += Math.abs(vertical ? e.deltaY : e.deltaX);
++    if (acc >= 50 / view.dpr) { acc = 0; HANDLERS[id](e); }
+   }, { passive: false });
+ 
+   // 右クリックで、ブラウザのメニュー (戻る・再読み込みなど) を出さない。入力欄では出す (貼り付けなどに使う)。
+@@ -1072,7 +1105,7 @@ function wirePointer() {
+ const HANDLERS = {
+   next: () => go(1), prev: () => go(-1),
+   first: () => goto(0), last: () => goto(folder.count - 1),
+-  zoomIn: () => view.zoomBy(1.25), zoomOut: () => view.zoomBy(1 / 1.25),
++  zoomIn: (e) => zoomStep(1.25, e), zoomOut: (e) => zoomStep(1 / 1.25, e),
+   fit: () => view.fit(), actual: () => view.zoomTo(view.actual),
+   full: () => (S.tool === 'crop' ? cropApply() : toggleFull()),
+   original: (e) => {
+diff --git a/src/settings.js b/src/settings.js
+index 224ebe7..7fc8dc9 100644
+--- a/src/settings.js
++++ b/src/settings.js
+@@ -18,7 +18,6 @@ const DEFAULTS = {
+   format: 'webp',   // 「名前を付けて保存」の最初の形式
+   quality: 85,
+   panel: false,     // 編集パネルを開いているか
+-  wheel: 'nav',     // ホイールの動き: 'nav' = 前後の画像へ、'zoom' = 拡大・縮小
+   sort: 'name',     // 並び順: 'name' = 名前、'mtime' = 新しい順
+   markSize: 16,
+   markColor: '#000000', // 塗りつぶしの色
+diff --git a/src/ui.js b/src/ui.js
+index 9fc09b2..7dbf2b2 100644
+--- a/src/ui.js
++++ b/src/ui.js
+@@ -2,7 +2,7 @@
+ 
+ import { FORMATS } from './export.js';
+ import { defaultPresets } from './settings.js';
+-import { ACTION_TABLE, GROUPS, bindingsOf, labelOf, isCustom, specOf, addBinding, removeBinding, resetBindings, actionById } from './keys.js';
++import { ACTION_TABLE, GROUPS, bindingsOf, labelOf, isCustom, specOf, addBinding, removeBinding, resetBindings, actionById, wheelSpec, mouseSpec, KEY_ONLY } from './keys.js';
+ 
+ const $ = (id) => document.getElementById(id);
+ 
+@@ -103,10 +103,9 @@ export function promptBox({ title, text = '', value = '', ok = '決定', cancel
+ // 割り当てを変えられない操作 (マウスや、固定のキー)
+ const HELP_FIXED = {
+   '見る': [
+-    ['ホイール', '前の画像・次の画像 (設定で拡大・縮小にもできる)'],
+-    ['Ctrl + ホイール', '拡大・縮小'],
++    ['Ctrl + ホイール', '拡大・縮小 (割り当てが無いとき)'],
+     ['ダブルクリック', '全体 ⇔ 等倍'],
+-    ['ドラッグ', '拡大中に、ずらす'],
++    ['ドラッグ・中ボタンのドラッグ', '拡大中に、ずらす'],
+     ['下の % をクリック', '全体 ⇔ 等倍'],
+   ],
+   '開く・消す': [['Ctrl + V', 'クリップボードの画像を開く']],
+@@ -164,9 +163,24 @@ export const setKeysHook = (fn) => { onKeysChanged = fn; };
+ 
+ export async function editKeys() {
+   let changed = false;
++  let removeMouse = () => {};
+   const r = await openModal((box, close) => {
+     const body = el('div', { className: 'keys-body' });
+-    const note = el('p', { className: 'key-note', textContent: '「＋」を押してから、割り当てたいキーを押す。Esc で取りやめ。他の操作が使っているキーを選ぶと、そちらから外れる。' });
++    const note = el('p', { className: 'key-note', textContent: '「＋」を押してから、割り当てたいキーを押す。マウスのホイールを回す・中ボタンや横ボタンを押す、でもよい (左ボタンは使えない)。Esc で取りやめ。他の操作が使っているものを選ぶと、そちらから外れる。' });
++
++    // 「＋」を押したあとに来たマウスの動きを、割り当て待ちの処理へ渡す。キーは onKey (openModal) が渡す。
++    const onMouse = (e) => {
++      const spec = e.type === 'wheel' ? wheelSpec(e) : mouseSpec(e); // 左ボタンは null
++      if (!spec) return;
++      const aux = e.type === 'mousedown' || e.type === 'auxclick';
++      if (aux) e.preventDefault(); // 中ボタンの自動スクロールなどを出さない
++      if (aux || !box.capture || !box.captureMouse) return; // 登録は pointerdown とホイールで受ける
++      e.preventDefault(); e.stopPropagation();
++      box.captureMouse(spec);
++    };
++    const mouseEvents = ['wheel', 'pointerdown', 'mousedown', 'auxclick'];
++    for (const t of mouseEvents) window.addEventListener(t, onMouse, { capture: true, passive: false });
++    removeMouse = () => { for (const t of mouseEvents) window.removeEventListener(t, onMouse, true); };
+ 
+     const draw = () => {
+       body.textContent = '';
+@@ -183,18 +197,28 @@ export async function editKeys() {
+           }
+           const add = el('button', { className: 'key-add', title: 'キーを足す', textContent: '＋' });
+           add.onclick = () => {
+-            add.textContent = 'キーを押す…';
++            add.textContent = 'キー・マウス…';
+             add.classList.add('waiting');
+-            box.capture = (e) => {
+-              const spec = specOf(e);
+-              if (spec === null) return; // Ctrl だけ、などは待ち続ける
+-              if (spec === 'Escape') { box.capture = null; draw(); return; }
+-              box.capture = null;
++            const finish = () => { box.capture = null; box.captureMouse = null; };
++            const accept = (spec, mouse) => {
++              finish();
++              if (mouse && KEY_ONLY.has(a.id)) {
++                draw();
++                note.textContent = `「${a.label}」は、押している間だけ効く操作なので、キーだけにしか割り当てられない。`;
++                return;
++              }
+               const from = addBinding(a.id, spec);
+               changed = true;
+               draw();
+               if (from) note.textContent = `「${labelOf(spec)}」は「${actionById(from).label}」から外して、「${a.label}」にした。`;
+             };
++            box.capture = (e) => {
++              const spec = specOf(e);
++              if (spec === null) return; // Ctrl だけ、などは待ち続ける
++              if (spec === 'Escape') { finish(); draw(); return; }
++              accept(spec, false);
++            };
++            box.captureMouse = (spec) => accept(spec, true);
+           };
+           cell.append(add);
+           row.append(cell);
+@@ -205,13 +229,14 @@ export async function editKeys() {
+     draw();
+ 
+     box.append(
+-      el('h2', { textContent: 'キーの設定' }), note, body,
++      el('h2', { textContent: 'キー・マウスの設定' }), note, body,
+       el('div', { className: 'row' },
+         el('button', { textContent: '最初の状態に戻す', onclick: () => { resetBindings(); changed = true; draw(); } }),
+         el('button', { textContent: '閉じる', className: 'primary', onclick: () => close(changed) })),
+     );
+     box.onEnter = null;
+   });
++  removeMouse();
+   onKeysChanged();
+   return r;
+ }
+diff --git a/test/ui.mjs b/test/ui.mjs
+index 4a2437e..9193554 100644
+--- a/test/ui.mjs
++++ b/test/ui.mjs
+@@ -102,13 +102,13 @@ section('フォルダと送り');
+   await p.waitForFunction(() => __iv.S.item.name === 'grad.png' && __iv.S.bmp);
+   ok(true, '壊れた画像の次へ送れる');
+ 
+-  // ホイール
++  // ホイール (最初の割り当ては、拡大・縮小。画像は送らない)
+   await p.mouse.move(400, 300);
+-  await p.mouse.wheel(0, 100);
+-  await p.waitForFunction(() => __iv.S.item.name === 'img1.png' && __iv.S.bmp);
+   await p.mouse.wheel(0, -100);
+-  await p.waitForFunction(() => __iv.S.item.name === 'grad.png' && __iv.S.bmp);
+-  ok(true, 'ホイールで前後に送れる');
++  ok(await ev(() => __iv.S.item.name === 'grad.png' && !__iv.view.fitMode), 'ホイールを奥へ回すと、送らずに拡大する');
++  const zIn = await ev(() => __iv.view.scale);
++  await p.mouse.wheel(0, 100);
++  ok(await ev((z) => __iv.S.item.name === 'grad.png' && __iv.view.scale < z, zIn), 'ホイールを手前へ回すと、縮小する');
+ 
+   // フォルダを開く
+   await open('sub', 'anim.gif');
+@@ -844,12 +844,6 @@ section('設定');
+   const r = await ev(() => ({ cur: __iv.S.item.name, at: __iv.folder.items[__iv.folder.index].name, m: __iv.folder.items.map((i) => i.mtime) }));
+   ok(r.cur === 'grad.png' && r.at === 'grad.png' && r.m.every((v, i) => i === 0 || r.m[i - 1] >= v), '並び順を「新しい順」にしても、見ている画像はそのまま');
+   await p.selectOption('#set-sort', 'name');
+-  // ホイールを「拡大・縮小」に
+-  await p.selectOption('#set-wheel', 'zoom');
+-  await p.mouse.move(400, 300);
+-  await p.mouse.wheel(0, -100);
+-  ok(await ev(() => __iv.S.item.name === 'grad.png' && !__iv.view.fitMode), 'ホイールを「拡大・縮小」にすると、送らずに拡大する');
+-  await p.selectOption('#set-wheel', 'nav');
+ }
+ 
+ // ----------------------------------------------------------------------
+@@ -881,7 +875,7 @@ section('キーの割り当て');
+   await p.waitForFunction(() => !document.getElementById('modal').hidden);
+   await p.click('#modal-box button:has-text("キーを変える")');
+   await p.waitForSelector('.key-row');
+-  ok(/キーの設定/.test(await modalText()), 'F1 → 「キーを変える」で、設定画面が出る');
++  ok(/マウスの設定/.test(await modalText()), 'F1 → 「キーを変える」で、設定画面が出る');
+ 
+   // 右回転に Alt + X を足す
+   await row('右へ 90 度').locator('.key-add').click();
+@@ -940,6 +934,104 @@ section('キーの割り当て');
+   ok(await ev(() => Object.keys(JSON.parse(localStorage.getItem('iv.settings.v1')).keys).length === 0), '設定の中身も、空に戻る');
+ }
+ 
++// ----------------------------------------------------------------------
++section('マウスの割り当て');
++{
++  const modalText = () => ev(() => document.getElementById('modal').hidden ? '' : document.getElementById('modal-box').textContent);
++  const row = (label) => p.locator('.key-row', { hasText: label }).first();
++  const rowHas = (label, re) => p.waitForFunction(([l, s]) => [...document.querySelectorAll('.key-row')].some((r) => r.textContent.includes(l) && new RegExp(s).test(r.textContent)), [label, re]);
++  const note = () => ev(() => document.querySelector('.key-note').textContent);
++  const name = () => ev(() => __iv.S.item.name);
++  await p.goto('http://localhost:8770/?open=' + encodeURIComponent(F('grad.png')));
++  await p.waitForFunction(() => window.__iv && __iv.S.bmp);
++  await ev(() => __iv.resetAll());
++  await ev(() => { if (document.getElementById('panel').hidden) __iv.togglePanel(true); });
++
++  // 設定パネルのボタンから開く。最初の割り当てに、ホイールが載っている
++  await p.click('#panel button[data-act="keys"]');
++  await p.waitForSelector('.key-row');
++  ok(/マウスの設定/.test(await modalText()), '設定パネルの「キー・マウスの設定」から、設定画面が出る');
++  ok(/ホイール↑/.test(await row('拡大').textContent()) && /ホイール↓/.test(await row('縮小').textContent()), '最初の割り当てでは、ホイール↑が拡大、ホイール↓が縮小');
++
++  // ホイール↓ を「次の画像」、ホイール↑ を「前の画像」に (縮小・拡大からは外れる)
++  await row('次の画像').locator('.key-add').click();
++  await p.mouse.move(600, 400);
++  await p.mouse.wheel(0, 100);
++  await rowHas('次の画像', 'ホイール↓');
++  ok(/「ホイール↓」は「縮小」から外して/.test(await note()), 'ホイールを割り当てると、使っていた操作 (縮小) から外れて、そう知らせる');
++  await row('前の画像').locator('.key-add').click();
++  await p.mouse.wheel(0, -100);
++  await rowHas('前の画像', 'ホイール↑');
++
++  // 戻るボタン (3 番目のボタン) を「最初の画像」、中ボタンを「最後の画像」に。戻るボタンは、本物を送れないので、同じ形の合成イベントで。
++  await row('最初の画像').locator('.key-add').click();
++  await ev(() => window.dispatchEvent(new PointerEvent('pointerdown', { button: 3, bubbles: true, cancelable: true })));
++  await rowHas('最初の画像', '戻るボタン');
++  await row('最後の画像').locator('.key-add').click();
++  await p.mouse.down({ button: 'middle' });
++  await p.mouse.up({ button: 'middle' });
++  await rowHas('最後の画像', '中ボタン');
++  ok(true, 'ホイール・戻るボタン・中ボタンを、割り当てられる');
++
++  // Ctrl + ホイール↑ も別に割り当てられる (修飾キーは、キーと同じ)
++  await row('等倍').locator('.key-add').click();
++  await p.keyboard.down('Control');
++  await p.mouse.wheel(0, -100);
++  await p.keyboard.up('Control');
++  await rowHas('等倍', 'Ctrl \\+ ホイール↑');
++  ok(true, 'Ctrl を押しながらのホイールも、別の割り当てになる');
++
++  // 押している間だけ効く操作は、マウスに割り当てられない
++  await row('押している間').locator('.key-add').click();
++  await p.mouse.wheel(0, 100);
++  await p.waitForFunction(() => /キーだけ/.test(document.querySelector('.key-note').textContent));
++  ok(!/ホイール/.test(await row('押している間').textContent()), '「押している間、元の絵を見る」は、マウスに割り当てられない');
++  await p.click('#modal-box button:has-text("閉じる")');
++  await p.waitForFunction(() => document.getElementById('modal').hidden);
++
++  // 効いているか
++  // (先の試験が書き出したファイルも同じフォルダにあるので、次の画像の名前は、フォルダの並びから取る)
++  const nextName = await ev(() => __iv.folder.items[__iv.folder.index + 1].name);
++  await p.mouse.move(400, 300);
++  await p.mouse.wheel(0, 100);
++  await p.waitForFunction((n) => __iv.S.item.name === n && __iv.S.bmp, nextName);
++  await p.mouse.wheel(0, -100);
++  await p.waitForFunction(() => __iv.S.item.name === 'grad.png' && __iv.S.bmp);
++  ok(nextName !== 'grad.png', 'ホイール↓で次の画像、ホイール↑で前の画像へ送れる');
++  await ev(() => document.getElementById('view').dispatchEvent(new PointerEvent('pointerdown', { button: 3, bubbles: true, cancelable: true, clientX: 400, clientY: 300 })));
++  await p.waitForFunction(() => __iv.S.item.name === __iv.folder.items[0].name && __iv.S.bmp);
++  ok(true, '戻るボタンで、最初の画像へ移る');
++  await p.mouse.down({ button: 'middle' });
++  await p.mouse.up({ button: 'middle' });
++  await p.waitForFunction(() => __iv.S.item.name === __iv.folder.items[__iv.folder.count - 1].name && __iv.S.bmp);
++  ok(true, '中ボタンをそのまま離すと (ずらさずに)、最後の画像へ移る');
++  // Ctrl + ホイール↑ には別の割り当て (等倍) があるので、拡大ではなく、そちらが効く。
++  // 割り当てが無い Ctrl + ホイール↓ は、ふつうに縮小する (ピンチと同じ)。
++  const imgName = await name();
++  await p.keyboard.down('Control');
++  await p.mouse.wheel(0, -100);
++  await p.keyboard.up('Control');
++  ok(await ev(() => Math.abs(__iv.view.scale - __iv.view.actual) < 1e-9), 'Ctrl + ホイール↑ は、割り当てた「等倍」が効く');
++  await p.keyboard.down('Control');
++  await p.mouse.wheel(0, 100);
++  await p.keyboard.up('Control');
++  ok(await ev((n) => __iv.S.item.name === n && __iv.view.scale < __iv.view.actual, imgName), '割り当てが無い Ctrl + ホイール↓ は、送らずにふつうに縮小する');
++
++  // 最初の状態に戻す → ホイールは、また拡大・縮小
++  await p.keyboard.press('F1');
++  await p.waitForFunction(() => !document.getElementById('modal').hidden);
++  await p.click('#modal-box button:has-text("キーを変える")');
++  await p.waitForSelector('.key-row');
++  await p.click('#modal-box button:has-text("最初の状態に戻す")');
++  await p.click('#modal-box button:has-text("閉じる")');
++  await p.waitForFunction(() => document.getElementById('modal').hidden);
++  await p.mouse.move(400, 300);
++  const nb = await name();
++  await p.mouse.wheel(0, -100);
++  ok(await ev((n) => __iv.S.item.name === n && !__iv.view.fitMode, nb), '最初の状態に戻すと、ホイールは、また拡大・縮小になる');
++  ok(await ev(() => Object.keys(JSON.parse(localStorage.getItem('iv.settings.v1')).keys).length === 0), '設定の中身も、空に戻る');
++}
++
+ // ----------------------------------------------------------------------
+ section('WebP に書き出せない環境 (Mac / Linux の WebView)');
+ {

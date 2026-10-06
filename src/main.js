@@ -25,7 +25,7 @@ import { FORMATS, formatOfExt, encode, usableFormat, uniquePath, fmtBytes } from
 import { settings, saveSettings } from './settings.js';
 import { toast, confirmBox, promptBox, showHelp, editKeys, setKeysHook, editPresets, modalOpen } from './ui.js';
 import { Player } from './anim.js';
-import { specOf, baseKey, actionFor, bindingsOf, firstLabel } from './keys.js';
+import { specOf, baseKey, actionFor, bindingsOf, firstLabel, wheelSpec, wheelDir, mouseSpec, KEY_ONLY } from './keys.js';
 
 const $ = (id) => document.getElementById(id);
 const cv = $('view');
@@ -934,9 +934,7 @@ function wirePanel() {
   $('set-confirm').addEventListener('change', () => { settings.confirmDelete = $('set-confirm').value === '1'; saveSettings(); });
   $('set-gps').value = settings.infoGps ? '1' : '0';
   $('set-gps').addEventListener('change', () => { settings.infoGps = $('set-gps').value === '1'; saveSettings(); drawInfo(); });
-  $('set-wheel').value = settings.wheel;
   $('set-sort').value = settings.sort;
-  $('set-wheel').addEventListener('change', () => { settings.wheel = $('set-wheel').value; saveSettings(); });
   $('set-sort').addEventListener('change', async () => {
     settings.sort = folder.sort = $('set-sort').value;
     saveSettings();
@@ -971,13 +969,32 @@ const local = (e) => {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 };
 
+// マウスのボタンに割り当てた操作を実行する。実行したら true。
+// 割り当ては、キーと同じ表 (keys.js) にある。「押している間だけ」の操作は、マウスでは使えない。
+function runMouse(e) {
+  const spec = mouseSpec(e), id = spec && actionFor(spec);
+  if (!id || KEY_ONLY.has(id) || !HANDLERS[id]) return false;
+  if (HANDLERS[id](e) !== false) e.preventDefault();
+  return true;
+}
+
+// 拡大・縮小。マウスのときは、指している場所を中心にする (ホイールは少し小さめの刻み)。
+function zoomStep(factor, e) {
+  if (e && e.target === cv && (e.type === 'wheel' || e.type.startsWith('pointer'))) {
+    const p = local(e);
+    view.zoomBy(e.type === 'wheel' ? (factor > 1 ? 1.2 : 1 / 1.2) : factor, p.x, p.y);
+  } else view.zoomBy(factor);
+}
+
 function wirePointer() {
   cv.addEventListener('pointerdown', (e) => {
-    if (!S.out || e.button === 2) return;
+    // 戻る・進むなど、3 番目より先のボタン。押したらすぐ実行する (ドラッグには使わない)
+    if (e.button >= 3) { e.preventDefault(); if (S.out) runMouse(e); return; }
+    if (!S.out || e.button === 2) return; // 右ボタンは、離したときに実行する (下)
     const p = local(e);
     cv.setPointerCapture(e.pointerId);
-    // 中ボタンは、どの道具を使っていても「ずらす」
-    if (e.button === 1) { e.preventDefault(); S.drag = { kind: 'pan', x: e.clientX, y: e.clientY }; }
+    // 中ボタンは、どの道具を使っていても「ずらす」。動かさずに離したら、割り当てた操作になる。
+    if (e.button === 1) { e.preventDefault(); S.drag = { kind: 'pan', x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY }; }
     else if (S.tool === 'crop') { crop.down(p.x, p.y); S.drag = { kind: 'crop' }; }
     else if (isMarkTool()) markDown(p.x, p.y);
     else if (view.pannable) S.drag = { kind: 'pan', x: e.clientX, y: e.clientY };
@@ -996,16 +1013,23 @@ function wirePointer() {
     else markMove(p.x, p.y);
   });
 
-  const end = () => {
+  const end = (e) => {
     const d = S.drag;
     if (!d) return;
     cv.classList.remove('grabbing');
     if (d.kind === 'crop') { S.drag = null; crop.up(); }
-    else if (d.kind === 'pan') { S.drag = null; updateUI(); }
+    else if (d.kind === 'pan') {
+      S.drag = null; updateUI();
+      // 中ボタンを、ほとんど動かさずに離した = クリック
+      if (e.type === 'pointerup' && e.button === 1 && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) runMouse(e);
+    }
     else markUp();
   };
   cv.addEventListener('pointerup', end);
   cv.addEventListener('pointercancel', end);
+  cv.addEventListener('pointerup', (e) => { if (e.button === 2 && S.out) runMouse(e); });
+  // 戻る・進むボタンで、ブラウザの「戻る」「進む」が動かないようにする
+  for (const t of ['mouseup', 'mousedown', 'auxclick']) cv.addEventListener(t, (e) => { if (e.button >= 3) e.preventDefault(); });
 
   // 下の「72%」を押すと、全体 ⇔ 等倍 (ダブルクリックと同じ)
   $('st-zoom').addEventListener('click', () => {
@@ -1025,19 +1049,28 @@ function wirePointer() {
     else if (view.fitScale() < one) view.zoomTo(one, p.x, p.y);
   });
 
-  // ホイール。ふだんは前後の画像へ送る。Ctrl を押しているとき・道具を使っているときは拡大。
-  let acc = 0;
+  // ホイール。割り当て (keys.js) どおりに動く。ふだんは拡大・縮小。
+  // 割り当てが無くても、Ctrl + ホイール (タッチパッドのピンチも同じ) と、道具を使っている間の縦ホイールは拡大・縮小。
+  // タッチパッドは細かい値が何度も来るので、ためてから 1 回ぶん動かす。
+  let acc = 0, accDir = null;
   cv.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (!S.out) return;
-    if (e.ctrlKey || S.tool || settings.wheel === 'zoom') {
+    const dir = wheelDir(e);
+    if (!dir) return;
+    // Shift や Alt を押していて、その組み合わせに割り当てが無ければ、ただのホイールとして扱う
+    const spec = wheelSpec(e), id = actionFor(spec) || (e.ctrlKey || e.metaKey ? null : actionFor(dir));
+    const vertical = dir === 'WheelUp' || dir === 'WheelDown';
+    const zoomDir = () => {
       const p = local(e);
-      view.zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, p.x, p.y);
-      return;
-    }
-    // タッチパッドは細かい値が何度も来るので、ためてから 1 枚送る
-    acc += e.deltaY;
-    if (Math.abs(acc) >= 50) { go(acc > 0 ? 1 : -1); acc = 0; }
+      view.zoomBy(dir === 'WheelUp' ? 1.2 : 1 / 1.2, p.x, p.y);
+    };
+    if (vertical && (S.tool || (!id && e.ctrlKey))) { zoomDir(); return; }
+    if (!id || KEY_ONLY.has(id) || !HANDLERS[id]) return;
+    // 向きが変わったら、ためた分は捨てる
+    if (dir !== accDir) { acc = 0; accDir = dir; }
+    acc += Math.abs(vertical ? e.deltaY : e.deltaX);
+    if (acc >= 50 / view.dpr) { acc = 0; HANDLERS[id](e); }
   }, { passive: false });
 
   // 右クリックで、ブラウザのメニュー (戻る・再読み込みなど) を出さない。入力欄では出す (貼り付けなどに使う)。
@@ -1072,7 +1105,7 @@ function wirePointer() {
 const HANDLERS = {
   next: () => go(1), prev: () => go(-1),
   first: () => goto(0), last: () => goto(folder.count - 1),
-  zoomIn: () => view.zoomBy(1.25), zoomOut: () => view.zoomBy(1 / 1.25),
+  zoomIn: (e) => zoomStep(1.25, e), zoomOut: (e) => zoomStep(1 / 1.25, e),
   fit: () => view.fit(), actual: () => view.zoomTo(view.actual),
   full: () => (S.tool === 'crop' ? cropApply() : toggleFull()),
   original: (e) => {

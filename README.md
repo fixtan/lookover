@@ -34,7 +34,7 @@ I built it for myself as a replacement for Honeyview, because I was tired of ope
 - Rename (<kbd>F2</kbd>), move to Recycle Bin (<kbd>Delete</kbd>, confirmation can be turned off), reveal in Explorer
 - Drag and drop to open. Opening a second image reuses the running window
 - **Image info overlay** (<kbd>I</kbd>): size, format, file size, shooting date, camera, exposure, modified date at the top left. It stays on across images and restarts. GPS coordinates stay hidden ("あり" only) unless you turn them on in settings
-- **Every shortcut can be rebound** (<kbd>F1</kbd> → "キーを変える"). <kbd>F1</kbd> also shows the full list
+- **Every shortcut can be rebound** (<kbd>F1</kbd> → "キー・マウスを変える"), and so can the mouse: the wheel (up / down / tilt), the middle / right button and the Back / Forward side buttons. By default the wheel zooms. <kbd>F1</kbd> also shows the full list
 
 Supported files: PNG, JPEG, WebP, GIF, BMP, AVIF, ICO, SVG.
 

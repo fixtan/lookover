@@ -26,7 +26,7 @@ test/           開発用サーバーと自動試験
 | `export.js` | 形式、エンコード、重ならない名前 |
 | `anim.js` | 動く GIF / WebP の再生 (ImageDecoder) |
 | `info.js` | 画像の情報 (`I` で左上に重ねる)。ファイルの先頭 512 KB から、形式のヘッダーと EXIF を自前で読む純粋な関数。画面にも Rust にも触らない (`test/info.mjs` が node で試す) |
-| `keys.js` | キーの割り当ての表 (処理の名前 ↔ キー)。押されたキーの判定、付け替え、保存 |
+| `keys.js` | キーとマウスの割り当ての表 (処理の名前 ↔ キー・ホイール・ボタン)。押されたものの判定、付け替え、保存 |
 | `settings.js` `ui.js` | 設定 (localStorage)、お知らせ・確認・入力の枠 |
 | `selftest.js` | アプリ本体の中で走る試験 (`--selftest=<結果の json>` で起動したときだけ) |
 
@@ -49,6 +49,8 @@ test/           開発用サーバーと自動試験
 
 キー処理は `keys.js` の表 (ACTION_TABLE) が元。`main.js` の HANDLERS (処理の名前 → 関数) とは名前でつながる。
 F1 の一覧、キーの設定画面、ボタンの吹き出し、ワンキー書き出しのボタンの札は、すべてこの表から作る。
+マウスも同じ表に載る。ホイールは `WheelUp` `WheelDown` `WheelLeft` `WheelRight`、ボタンは `MouseMiddle` `MouseRight` `MouseBack` `MouseForward` (それより先は `Mouse5` …)、修飾キーは `Ctrl+WheelUp` のようにキーと同じ書き方。左ボタンはドラッグや道具に使うので割り当てない。「押している間だけ効く」操作 (`KEY_ONLY`) は、離したことをマウスでは拾えないので、キーだけ。
+
 変えた分だけを `settings.keys` に覚える (最初の割り当てと同じに戻したら、覚えから消す)。
 英字と数字は `event.code` (キーの位置) で決めるので、日本語配列でも英語配列でも同じ。記号は出る文字で決め、Shift は付けない。
 固定のもの (Esc、Ctrl + V、切り抜き中の矢印) は表に入れない。

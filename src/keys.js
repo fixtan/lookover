@@ -21,8 +21,8 @@ export const ACTION_TABLE = [
   { id: 'prev', group: '見る', label: '前の画像', keys: ['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'] },
   { id: 'first', group: '見る', label: '最初の画像', keys: ['Home'] },
   { id: 'last', group: '見る', label: '最後の画像', keys: ['End'] },
-  { id: 'zoomIn', group: '見る', label: '拡大', keys: ['+', ';', '='] },
-  { id: 'zoomOut', group: '見る', label: '縮小', keys: ['-'] },
+  { id: 'zoomIn', group: '見る', label: '拡大', keys: ['+', ';', '=', 'WheelUp'] },
+  { id: 'zoomOut', group: '見る', label: '縮小', keys: ['-', 'WheelDown'] },
   { id: 'fit', group: '見る', label: '全体を表示 (窓に合わせる)', keys: ['0', 'F', 'Ctrl+0'] },
   { id: 'actual', group: '見る', label: '等倍 (100%)', keys: ['1'] },
   { id: 'full', group: '見る', label: '全画面 (切り抜き中は「決定」)', keys: ['Enter', 'F11'] },
@@ -91,6 +91,55 @@ export function specOf(e) {
   return [...mods, b].join('+');
 }
 
+// ---- マウス ----
+//
+// マウスの動きも、キーと同じ「文字列」で表して、同じ表 (ACTION_TABLE) に割り当てる。
+//   ホイール: 'WheelUp' (奥へ回す)、'WheelDown' (手前へ回す)、'WheelLeft' / 'WheelRight' (横に倒す)
+//   ボタン  : 'MouseMiddle' (中)、'MouseRight' (右)、'MouseBack' (戻る)、'MouseForward' (進む)、
+//             それより先のボタンは 'Mouse5', 'Mouse6' …
+//   修飾キーは、キーと同じ。例: 'Ctrl+WheelUp'、'Shift+MouseBack'
+//   左ボタンは、ドラッグや道具に使うので、割り当てられない。
+const MOUSE_BUTTONS = { 1: 'MouseMiddle', 2: 'MouseRight', 3: 'MouseBack', 4: 'MouseForward' };
+
+function modsOf(e) {
+  const mods = [];
+  if (e.ctrlKey || e.metaKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  return mods;
+}
+
+// ホイールの向き。縦の動きの方が大きければ縦、そうでなければ横。動いていなければ null。
+export function wheelDir(e) {
+  const x = e.deltaX || 0, y = e.deltaY || 0;
+  if (!x && !y) return null;
+  if (Math.abs(y) >= Math.abs(x)) return y < 0 ? 'WheelUp' : 'WheelDown';
+  return x < 0 ? 'WheelLeft' : 'WheelRight';
+}
+
+export function wheelSpec(e) {
+  const d = wheelDir(e);
+  return d && [...modsOf(e), d].join('+');
+}
+
+// 左ボタン (0) は null
+export function mouseSpec(e) {
+  if (e.button === 0) return null;
+  const name = MOUSE_BUTTONS[e.button] || 'Mouse' + e.button;
+  return [...modsOf(e), name].join('+');
+}
+
+// 押している間だけ効く操作は、マウスには割り当てられない (離したことを、キーのようには拾えない)
+export const KEY_ONLY = new Set(['original']);
+
+export const isMouseSpec =(spec) => /(^|\+)(Wheel(Up|Down|Left|Right)|Mouse[A-Za-z0-9]+)$/.test(spec);
+
+const MOUSE_NAMES = {
+  WheelUp: 'ホイール↑', WheelDown: 'ホイール↓', WheelLeft: 'ホイール←', WheelRight: 'ホイール→',
+  MouseMiddle: '中ボタン', MouseRight: '右ボタン', MouseBack: '戻るボタン', MouseForward: '進むボタン',
+};
+const mouseName = (n) => MOUSE_NAMES[n] || (/^Mouse\d+$/.test(n) ? 'ボタン' + (Number(n.slice(5)) + 1) : null);
+
 // 'Ctrl+Shift+S' → 'Ctrl + Shift + S'。矢印は記号で。
 const NAMES = { ArrowRight: '→', ArrowLeft: '←', ArrowUp: '↑', ArrowDown: '↓', Space: 'Space', ' ': 'Space' };
 export function labelOf(spec) {
@@ -98,7 +147,7 @@ export function labelOf(spec) {
   const out = [];
   let rest = spec;
   for (const m of ['Ctrl+', 'Alt+', 'Shift+']) if (rest.startsWith(m) && rest.length > m.length) { out.push(m.slice(0, -1)); rest = rest.slice(m.length); }
-  out.push(NAMES[rest] || rest);
+  out.push(NAMES[rest] || mouseName(rest) || rest);
   return out.join(' + ');
 }
 

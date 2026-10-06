@@ -18,7 +18,6 @@ const DEFAULTS = {
   format: 'webp',   // 「名前を付けて保存」の最初の形式
   quality: 85,
   panel: false,     // 編集パネルを開いているか
-  wheel: 'nav',     // ホイールの動き: 'nav' = 前後の画像へ、'zoom' = 拡大・縮小
   sort: 'name',     // 並び順: 'name' = 名前、'mtime' = 新しい順
   markSize: 16,
   markColor: '#000000', // 塗りつぶしの色
