@@ -36,7 +36,7 @@ http.createServer(async (req, res) => {
       }
       case '/api/info': return json(entry(q('path')));
       case '/api/exists': return json({ exists: fs.existsSync(q('path')) });
-      case '/api/read': { res.writeHead(200, { 'content-type': 'application/octet-stream' }); return res.end(fs.readFileSync(q('path'))); }
+      case '/api/read': { const buf = fs.readFileSync(q('path')); res.writeHead(200, { 'content-type': 'application/octet-stream' }); return res.end(buf); }
       case '/api/write': {
         const p = q('path'), tmp = p + '.tmp-write';
         fs.writeFileSync(tmp, await body(req));
@@ -61,6 +61,7 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-store' });
     fs.createReadStream(f).pipe(res);
   } catch (e) {
+    if (res.headersSent) return res.end(); // 読む途中で失敗したときは、止まらずに切る
     res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
     res.end(String(e && e.message ? e.message : e));
   }

@@ -1,6 +1,6 @@
 [package]
 name = "lookover"
-version = "0.1.3"
+version = "0.2.0"
 description = "画像ビューア兼かんたん編集"
 authors = ["fixtan"]
 edition = "2021"

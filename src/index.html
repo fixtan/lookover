@@ -99,9 +99,31 @@
           <button data-act="mark-frame" data-tool="frame" title="枠で囲む (K)">枠</button>
           <button data-act="mark-arrow" data-tool="arrow" title="矢印 (A)">矢印</button>
         </div>
-        <label class="slider">強さ・太さ <span id="mark-size-v">16</span>
+        <label class="slider" id="size-row">強さ <span id="mark-size-v">16</span>
           <input type="range" id="mark-size" min="4" max="64" step="1" value="16" />
         </label>
+        <div id="pen-opts" hidden>
+          <label class="slider">線の太さ <span id="pen-lw-v">4</span>
+            <input type="range" id="pen-lw" min="1" max="40" step="1" value="4" />
+          </label>
+          <label class="slider">不透明度 <span id="pen-op-v">100</span>
+            <input type="range" id="pen-op" min="10" max="100" step="5" value="100" />
+          </label>
+          <div id="pen-frame-opts">
+            <label class="slider">角の丸み <span id="pen-radius-v">0</span>
+              <input type="range" id="pen-radius" min="0" max="80" step="1" value="0" />
+            </label>
+            <label class="inline"><input type="checkbox" id="pen-dash" /> 点線</label>
+          </div>
+          <div id="pen-arrow-opts">
+            <label class="inline"><input type="checkbox" id="pen-taper" /> 先細り (根もとを細く)</label>
+          </div>
+          <label class="inline"><input type="checkbox" id="pen-shadow" /> 影をつける</label>
+          <div class="dim">登録 (数字キー 1〜5 で呼ぶ。Shift + 数字、または Shift + クリックで登録)</div>
+          <div class="row" id="pen-presets">
+            <button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button>
+          </div>
+        </div>
         <div class="row">
           <label class="inline"><span id="mark-color-label">塗る色</span> <input type="color" id="mark-color" value="#000000" /></label>
           <button data-act="markClear" id="btn-mark-clear" disabled>全部消す</button>

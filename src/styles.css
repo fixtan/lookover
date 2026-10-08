@@ -81,6 +81,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
 label.slider { display: block; font-size: 12px; color: var(--dim); margin: 3px 0; }
 label.slider span { float: right; color: var(--fg); font-variant-numeric: tabular-nums; }
 label.inline { color: var(--dim); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+#pen-opts { margin-top: 2px; }
+#pen-opts label.inline { margin: 4px 0; }
+#pen-opts input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
+#pen-presets button { position: relative; padding-bottom: 6px; }
+#pen-presets button::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 2px; height: 3px; border-radius: 2px; background: var(--sw, transparent); }
+#pen-presets button.set { color: var(--fg); }
 
 #presets { display: flex; flex-direction: column; gap: 4px; }
 #presets button { text-align: left; display: flex; justify-content: space-between; gap: 8px; }
@@ -138,3 +144,4 @@ label.inline { color: var(--dim); font-size: 12px; display: flex; gap: 6px; alig
 #modal-box .key-add { min-width: 0; padding: 0 8px; }
 #modal-box .key-add.waiting { border-color: var(--accent); color: var(--accent); }
 #modal-box .key-none { color: var(--dim); }
+#size-row[hidden], #pen-opts[hidden], #pen-frame-opts[hidden], #pen-arrow-opts[hidden] { display: none; }

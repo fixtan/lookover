@@ -9,6 +9,8 @@
 //
 // 切り抜きの範囲と、隠す範囲は、「向きを変えた後・切り抜く前」の絵の上の座標で持つ。
 
+import { drawPen } from './annotate.js';
+
 export const ADJ_KEYS = ['brightness', 'contrast', 'saturation', 'temperature', 'tint', 'highlights', 'shadows', 'sharpen'];
 
 export function emptyEdit() {
@@ -21,8 +23,9 @@ export function emptyEdit() {
     resize: null,  // { mode: 'width' | 'height' | 'long' | 'percent', value } か null
     adj,           // 色の調整。どれも -100 〜 100 (sharpen は 0 〜 100)
     // 絵の上に描き足すもの。隠す (mosaic / blur / fill) と、目印 (frame = 枠、arrow = 矢印)。
-    //   [{ type, x, y, w, h, size, color, dir }]
-    //   size : モザイクの 1 マスの大きさ・ぼかしの強さ・線の太さのもと
+    //   [{ type, x, y, w, h, size, color, dir, ... }]
+    //   size : モザイクの 1 マスの大きさ・ぼかしの強さ
+    //   枠・矢印は、線の太さ・不透明度・影などの項目も持つ (annotate.js)
     //   dir  : 矢印だけ。範囲の四角の、どの角から対角へ向かうか (0 = 左上、1 = 右上、2 = 右下、3 = 左下)
     marks: [],
   };
@@ -157,37 +160,11 @@ function drawMark(cv, m) {
     g.fillRect(r.x, r.y, r.w, r.h);
     return;
   }
-  const size = Math.max(2, m.size || 16);
   if (m.type === 'frame' || m.type === 'arrow') {
-    const t = Math.max(1, Math.round(size / 4)); // 線の太さ
-    g.save();
-    g.strokeStyle = g.fillStyle = m.color || '#ff3b30';
-    g.lineWidth = t;
-    if (m.type === 'frame') {
-      // 線が範囲の内側に収まるように、太さの半分だけ内へ寄せる
-      g.strokeRect(r.x + t / 2, r.y + t / 2, Math.max(0, r.w - t), Math.max(0, r.h - t));
-    } else {
-      const cs = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
-      const d = m.dir || 0, [ax, ay] = cs[d], [bx, by] = cs[(d + 2) % 4];
-      const len = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / len, uy = (by - ay) / len;
-      const head = Math.min(len * 0.6, Math.max(t * 4, 14)); // 矢じりの長さ
-      // 軸 (矢じりの付け根まで)
-      g.lineCap = 'round';
-      g.beginPath();
-      g.moveTo(ax, ay);
-      g.lineTo(bx - ux * head * 0.8, by - uy * head * 0.8);
-      g.stroke();
-      // 矢じり (先端と、その手前の左右の 2 点を結んだ三角)
-      g.beginPath();
-      g.moveTo(bx, by);
-      g.lineTo(bx - ux * head - uy * head * 0.45, by - uy * head + ux * head * 0.45);
-      g.lineTo(bx - ux * head + uy * head * 0.45, by - uy * head - ux * head * 0.45);
-      g.closePath();
-      g.fill();
-    }
-    g.restore();
+    drawPen(g, m, r); // 枠・矢印の描き方は annotate.js
     return;
   }
+  const size = Math.max(2, m.size || 16);
   if (m.type === 'mosaic') {
     // 小さく縮めてから、ぼかさずに引き伸ばす。1 マスが size 画素の四角になる。
     const tw = Math.max(1, Math.ceil(r.w / size)), th = Math.max(1, Math.ceil(r.h / size));

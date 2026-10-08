@@ -20,7 +20,8 @@ I built it for myself as a replacement for Honeyview, because I was tired of ope
 **Edit** (non-destructive: the file is untouched until you export)
 - Rotate, flip, crop (free or fixed ratio), resize
 - Brightness, contrast, saturation, temperature, tint, highlights, shadows, sharpen (WebGL)
-- Mosaic, blur, fill, frame, arrow
+- Mosaic, blur, fill
+- Frame and arrow: line width, color, opacity, shadow; dashed and rounded frames, tapered arrows. Each tool remembers its last settings, and keys <kbd>1</kbd>–<kbd>5</kbd> recall saved presets (<kbd>Shift</kbd>+digit saves). Burned into the image on export
 - Undo / redo, and edits are remembered per file while the app is open
 
 **Export**

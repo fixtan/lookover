@@ -34,3 +34,5 @@ test/app-result.json
 test/app-second.txt
 test/app-shot.*
 test/*.png
+
+*.patch

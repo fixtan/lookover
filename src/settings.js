@@ -21,7 +21,9 @@ const DEFAULTS = {
   sort: 'name',     // 並び順: 'name' = 名前、'mtime' = 新しい順
   markSize: 16,
   markColor: '#000000', // 塗りつぶしの色
-  penColor: '#ff3b30',  // 枠と矢印の色
+  penColor: '#ff3b30',  // 枠と矢印の色 (以前の版の設定。新しくは pen を使う。読み込み時に pen へ移す)
+  pen: {},          // 枠・矢印の道具ごとの「最後に使った設定」{ frame, arrow }。annotate.js の PEN_DEFAULT が元
+  penPresets: {},   // 枠・矢印の登録 { frame: [設定 か null × 5], arrow: [...] }。数字キー 1 〜 5 で呼び出す
   lastDir: '',
   info: false,      // 画像の情報を左上に重ねているか (画像を替えても、再起動しても、そのまま)
   infoGps: false,   // 情報に、撮影場所の座標まで出すか (false なら「あり」とだけ)
@@ -32,7 +34,10 @@ const DEFAULTS = {
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { ...structuredClone(DEFAULTS), ...saved };
+    const s = { ...structuredClone(DEFAULTS), ...saved };
+    // 以前の版は、枠と矢印の色を penColor 1 つで持っていた。道具ごとの設定へ引き継ぐ。
+    if (saved.penColor && !(saved.pen && Object.keys(saved.pen).length)) s.pen = { frame: { color: saved.penColor }, arrow: { color: saved.penColor } };
+    return s;
   } catch (e) {
     return structuredClone(DEFAULTS);
   }

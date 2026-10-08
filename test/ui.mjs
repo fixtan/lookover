@@ -550,6 +550,176 @@ section('目印 (枠・矢印)');
 }
 
 // ----------------------------------------------------------------------
+section('注釈 (枠・矢印の見た目、道具ごとの記憶、登録)');
+{
+  await open('img1.png');
+  const put = (m) => ev(async (m) => { __iv.S.edit.marks.length = 0; __iv.S.edit.marks.push(m); __iv.commit(); await __iv.rebuild(); }, m);
+  const px = (pts) => ev((pts) => T.px(pts), pts);
+  const near = (a, b, d = 3) => b.every((v, i) => Math.abs(a[i] - v) <= d);
+  const box = { type: 'frame', x: 10, y: 10, w: 180, h: 130, size: 16 };
+  const painted = (arrR, pred) => arrR.filter(pred).length;
+  const BLUE = '#0000ff';
+
+  // 以前の版の目印 (lw が無い) は、前と同じ見た目で描く
+  await put({ ...box, color: '#ff3b30' });
+  let r = await px([[13, 70], [15, 70], [100, 11], [100, 15]]);
+  ok(near(r[0], [255, 59, 48], 0) && near(r[1], [255, 0, 0], 0) && near(r[2], [255, 59, 48], 0) && near(r[3], [255, 0, 0], 0), '以前の版の枠: 太さは size ÷ 4 = 4 画素のまま');
+  await put({ type: 'arrow', x: 30, y: 30, w: 160, h: 80, dir: 0, size: 16, color: '#ff3b30' });
+  ok(await ev(() => T.hist()['255,59,48'] > 300), '以前の版の矢印も、描ける');
+
+  // 不透明度: 青を 50% で赤の上に重ねると、紫になる
+  await put({ ...box, color: BLUE, lw: 4, opacity: 50 });
+  r = await px([[11, 70]]);
+  ok(near(r[0], [128, 0, 128], 2), `不透明度 50%: 赤に重なって紫 → ${r[0]}`);
+
+  // 点線: 上の辺に、塗られた画素と、抜けた画素の両方がある
+  await put({ ...box, color: BLUE, lw: 4, dash: true });
+  r = await px(Array.from({ length: 160 }, (_, i) => [20 + i, 11]));
+  const on = painted(r, (c) => c[2] > 200), off = painted(r, (c) => c[2] < 50);
+  ok(on > 40 && off > 40, `点線: 上の辺の 160 画素のうち 線 ${on}、すき間 ${off}`);
+  await put({ ...box, color: BLUE, lw: 4, dash: false });
+  r = await px(Array.from({ length: 160 }, (_, i) => [20 + i, 11]));
+  ok(painted(r, (c) => c[2] > 200) === 160, '実線: 上の辺はすき間なし');
+
+  // 角丸: 角の画素が線で塗られない。丸みなしなら塗られる
+  await put({ ...box, color: BLUE, lw: 4, radius: 0 });
+  const sq = (await px([[11, 11]]))[0];
+  await put({ ...box, color: BLUE, lw: 4, radius: 40 });
+  const rd = (await px([[11, 11], [100, 11]]));
+  ok(sq[2] > 200 && near(rd[0], [255, 0, 0], 0) && rd[1][2] > 200, `角丸: 角は元のまま、辺は線 (丸みなしの角 ${sq})`);
+
+  // 影: 枠のすぐ外 (下) が少し暗くなる
+  await put({ ...box, color: BLUE, lw: 6, shadow: true });
+  const sh = (await px([[100, 143]]))[0][0];
+  await put({ ...box, color: BLUE, lw: 6, shadow: false });
+  const nosh = (await px([[100, 143]]))[0][0];
+  ok(nosh === 255 && sh < 245, `影: 枠の外が暗くなる (影あり ${sh}、なし ${nosh})`);
+
+  // 矢印: 先細りは、根もとが細く、矢じりの手前で太い。先細りなしは、同じ太さ。
+  const arrow = { type: 'arrow', x: 30, y: 30, w: 160, h: 1, dir: 0, size: 16, color: BLUE, lw: 12 };
+  const thick = async (x) => { const c = await px(Array.from({ length: 41 }, (_, i) => [x, 10 + i])); return painted(c, (v) => v[2] > 200); };
+  await put({ ...arrow, taper: true });
+  const t1 = await thick(40), t2 = await thick(140);
+  await put({ ...arrow, taper: false });
+  const n1 = await thick(40), n2 = await thick(140);
+  ok(t1 <= 4 && t2 >= 9 && t2 > t1 * 2, `先細り: 根もとの太さ ${t1} 画素、矢じりの手前 ${t2} 画素`);
+  ok(Math.abs(n1 - n2) <= 1 && n1 >= 11, `先細りなし: 根もと ${n1}、矢じりの手前 ${n2} で同じ`);
+  // 不透明度をかけても、軸と矢じりの重なりが濃くならない (1 つの塗りなので)
+  await put({ ...arrow, taper: false, opacity: 50 });
+  r = await px([[100, 30], [170, 30]]);
+  ok(near(r[0], [128, 0, 128], 2) && near(r[1], [128, 0, 128], 2), `矢印に不透明度をかけても、軸と矢じりで同じ色 → ${r.join(' | ')}`);
+
+  // 書き出すと、線が焼き込まれる (ファイルを読み直して確かめる)
+  await put({ ...box, color: BLUE, lw: 16 });
+  // 書き出し先は別のフォルダにする (同じフォルダに増えると、後の試験の「次の画像」が変わる)
+  const annDir = F('annot-out');
+  fs.mkdirSync(annDir, { recursive: true });
+  await ev((d) => { __iv.settings.presets[1].dir = d; }, annDir);
+  const out = await ev(() => __iv.quickExport(1));
+  await ev(() => { __iv.settings.presets[1].dir = ''; });
+  // 「書き出した」のお知らせが消えるまで待つ (残っていると、後の試験が、次の書き出しを待たずに進んでしまう)
+  await p.waitForFunction(() => !document.getElementById('toasts').textContent.trim(), null, { timeout: 15000 });
+  const exp = await ev(async (path) => {
+    const bm = await createImageBitmap(await (await fetch('/api/read?path=' + encodeURIComponent(path))).blob());
+    const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height;
+    const g = c.getContext('2d'); g.drawImage(bm, 0, 0);
+    return [Array.from(g.getImageData(18, 70, 1, 1).data), Array.from(g.getImageData(60, 70, 1, 1).data)];
+  }, out);
+  ok(exp[0][2] > 180 && exp[0][0] < 80 && exp[1][0] > 200 && exp[1][2] < 60, `書き出した WebP に、線が焼き込まれている → ${exp[0]} ／ ${exp[1]}`);
+  await ev(() => __iv.resetAll());
+
+  // ---- 道具ごとの記憶 ----
+  const scr = (x, y) => ev(([x, y]) => { const r = document.getElementById('view').getBoundingClientRect(), s = __iv.view.toScreen(x, y); return [r.left + s.x, r.top + s.y]; }, [x, y]);
+  const drag = async (a, b) => { const s = await scr(...a), e = await scr(...b); await p.mouse.move(s[0], s[1]); await p.mouse.down(); await p.mouse.move(e[0], e[1], { steps: 5 }); await p.mouse.up(); };
+  const setRange = (id, v) => ev(([id, v]) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  const setCheck = (id, v) => ev(([id, v]) => { const el = document.getElementById(id); el.checked = v; el.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  await ev(() => { __iv.settings.pen = {}; __iv.settings.penPresets = {}; });
+  await ev(() => __iv.togglePanel(true));
+
+  await p.keyboard.press('k');
+  ok(await ev(() => !document.getElementById('pen-opts').hidden && document.getElementById('size-row').hidden && !document.getElementById('pen-frame-opts').hidden && document.getElementById('pen-arrow-opts').hidden), '枠の道具では、枠の項目が出る (強さの欄は隠れる)');
+  await setRange('pen-lw', 10);
+  await setRange('pen-radius', 20);
+  await setCheck('pen-shadow', true);
+  const saved = await ev(() => JSON.parse(localStorage.getItem('iv.settings.v1')).pen);
+  ok(saved.frame && saved.frame.lw === 10 && saved.frame.radius === 20 && saved.frame.shadow === true && !saved.arrow, `枠の設定を変えると、すぐ覚える (矢印は触らない) → ${JSON.stringify(saved)}`);
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('a');
+  ok(await ev(() => document.getElementById('pen-lw').value === '6' && !document.getElementById('pen-taper').hidden === true && document.getElementById('pen-taper').checked && document.getElementById('pen-frame-opts').hidden), '矢印の道具に替えると、矢印の設定 (太さ 6、先細り) が出る');
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('k');
+  await drag([30, 30], [130, 100]);
+  let m = await ev(() => __iv.S.edit.marks[0]);
+  ok(m.type === 'frame' && m.lw === 10 && m.radius === 20 && m.shadow === true, `次に描く枠は、最後に使った設定になる → ${JSON.stringify({ lw: m.lw, radius: m.radius, shadow: m.shadow })}`);
+
+  // 描いた枠を選んで変えると、その道具の設定としても覚える
+  await setRange('pen-lw', 3);
+  m = await ev(() => __iv.S.edit.marks[0]);
+  ok(m.lw === 3 && await ev(() => __iv.settings.pen.frame.lw === 3), '選んでいる枠の太さを変えると、枠にも設定にも反映される');
+
+  // 登録 (Shift + 数字で登録、数字で呼ぶ)
+  await p.keyboard.press('Delete');
+  await setRange('pen-lw', 10);
+  await p.keyboard.press('Shift+Digit2');
+  const pre = await ev(() => __iv.settings.penPresets.frame);
+  ok(pre && pre[1] && pre[1].lw === 10 && pre[0] === null, `Shift + 2 で、2 番にいまの設定を登録 → ${JSON.stringify(pre && pre[1])}`);
+  await setRange('pen-lw', 3);
+  await setRange('pen-op', 60);
+  await p.keyboard.press('Digit2');
+  ok(await ev(() => __iv.settings.pen.frame.lw === 10 && __iv.settings.pen.frame.opacity === 100 && document.getElementById('pen-lw').value === '10'), '2 を押すと、登録した設定に戻る');
+  ok(await ev(() => document.querySelectorAll('#pen-presets button.set').length === 1), '登録のあるボタンに印が付く');
+  await p.keyboard.press('Digit4');
+  ok(await ev(() => __iv.settings.pen.frame.lw === 10 && __iv.S.tool === 'frame'), '未登録の番号を押しても、設定は変わらない');
+
+  // 選んでいる目印に呼び出す → 取り消しで戻る
+  await drag([30, 30], [130, 100]);
+  await setRange('pen-lw', 2);
+  await p.keyboard.press('Digit2');
+  ok(await ev(() => __iv.S.edit.marks[0].lw === 10), '枠を選んでいるとき、登録を呼ぶと、その枠に当たる');
+  await p.keyboard.press('Control+z');
+  ok(await ev(() => __iv.S.edit.marks[0].lw === 2), '取り消すと、登録を呼ぶ前に戻る');
+  await p.keyboard.press('Escape');
+  await ev(() => __iv.resetAll());
+
+  // ---- 作ったあとの、大きさ・向きの変更 ----
+  await ev(() => { __iv.settings.pen = {}; });
+  await p.keyboard.press('k');
+  await drag([40, 40], [140, 100]);
+  await drag([140, 100], [180, 120]); // 右下のつまみを引く
+  m = await ev(() => __iv.S.edit.marks[0]);
+  ok(m.x === 40 && m.y === 40 && m.w === 140 && m.h === 80 && await ev(() => __iv.S.edit.marks.length === 1), `枠: 右下のつまみを引くと、大きさが変わる → ${JSON.stringify({ x: m.x, y: m.y, w: m.w, h: m.h })}`);
+  await drag([110, 40], [110, 20]); // 上の辺のつまみ
+  m = await ev(() => __iv.S.edit.marks[0]);
+  ok(m.y === 20 && m.h === 100 && m.x === 40 && m.w === 140, `枠: 上の辺のつまみは、縦だけ変わる → y ${m.y}、高さ ${m.h}`);
+  await drag([180, 70], [10, 70]); // 右の辺を、左の辺より向こうまで引く
+  m = await ev(() => __iv.S.edit.marks[0]);
+  ok(m.x === 10 && m.w === 30 && m.h === 100, `枠: 反対側まで引くと、左右が入れ替わる → x ${m.x}、幅 ${m.w}`);
+  await p.keyboard.press('Control+z');
+  ok(await ev(() => __iv.S.edit.marks[0].w === 140), '大きさの変更も、取り消せる');
+  await ev(() => __iv.markClear());
+
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('a');
+  await drag([60, 50], [160, 50]); // 横向きの矢印 (根もと → 先)
+  await drag([160, 50], [160, 110]); // 先のつまみを下へ
+  m = await ev(() => __iv.S.edit.marks[0]);
+  ok(m.type === 'arrow' && m.dir === 0 && m.x === 60 && m.y === 50 && m.w === 100 && m.h === 60, `矢印: 先のつまみを引くと、先だけ動く (根もとは同じ) → ${JSON.stringify({ x: m.x, y: m.y, w: m.w, h: m.h, dir: m.dir })}`);
+  await drag([60, 50], [220, 20]); // 根もとのつまみを、先の右上へ
+  m = await ev(() => __iv.S.edit.marks[0]);
+  const tip = await ev(() => { const m = __iv.S.edit.marks[0], cs = [[m.x, m.y], [m.x + m.w, m.y], [m.x + m.w, m.y + m.h], [m.x, m.y + m.h]]; return { a: cs[m.dir], b: cs[(m.dir + 2) % 4] }; });
+  ok(tip.b[0] === 160 && tip.b[1] === 110 && tip.a[0] === 220 && tip.a[1] === 20, `矢印: 根もとのつまみを引くと、向きも変わる (先は動かない) → 根もと ${tip.a}、先 ${tip.b}`);
+  await drag([100, 70], [100, 90]); // 線の途中をつかんで動かす (動かすのは今までどおり)
+  const mv2 = await ev(() => __iv.S.edit.marks[0]);
+  ok(mv2.w === m.w && mv2.h === m.h, '矢印: つまみ以外をつかむと、大きさは変えずに動かす');
+  await p.keyboard.press('Escape');
+  await ev(() => __iv.resetAll());
+
+  // 保存されていた値が欠けていても、壊れていても、使える形に直す
+  const norm = await ev(async () => { const a = await import('/annotate.js'); return [a.normStyle('frame', { lw: 'x', opacity: 999, color: 'red', radius: -5 }), a.normStyle('arrow', null)]; });
+  ok(norm[0].lw === 4 && norm[0].opacity === 100 && norm[0].color === '#ff3b30' && norm[0].radius === 0 && norm[1].taper === true && norm[1].lw === 6, '壊れた設定は、既定の値に直る');
+}
+
+// ----------------------------------------------------------------------
 section('取り消し・やり直し・覚えておく');
 {
   // 前の試験で積んだ履歴を捨てて、まっさらな状態から始める

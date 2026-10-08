@@ -25,6 +25,9 @@ import { FORMATS, formatOfExt, encode, usableFormat, uniquePath, fmtBytes } from
 import { settings, saveSettings } from './settings.js';
 import { toast, confirmBox, promptBox, showHelp, editKeys, setKeysHook, editPresets, modalOpen } from './ui.js';
 import { Player } from './anim.js';
+import {
+  PEN_TOOLS, PEN_LIMITS, PRESET_SLOTS, penStyle, setPenStyle, styleOfMark, applyStyle, presetOf, savePreset, describeStyle,
+} from './annotate.js';
 import { specOf, baseKey, actionFor, bindingsOf, firstLabel, wheelSpec, wheelDir, mouseSpec, KEY_ONLY } from './keys.js';
 
 const $ = (id) => document.getElementById(id);
@@ -62,7 +65,7 @@ const S = {
 const kept = new Map();
 
 const MARK_TOOLS = ['mosaic', 'blur', 'fill', 'frame', 'arrow'];
-const PEN_TOOLS = ['frame', 'arrow']; // 隠すのではなく、目印を描く道具 (色は penColor)
+// 隠すのではなく目印を描く道具 (枠・矢印) の設定は、annotate.js の penStyle (道具ごとに最後の設定を覚える)
 const TOOL_NAMES = { mosaic: 'モザイク', blur: 'ぼかし', fill: '塗りつぶし', frame: '枠', arrow: '矢印' };
 const isMarkTool = () => MARK_TOOLS.includes(S.tool);
 
@@ -322,7 +325,7 @@ function setTool(t) {
   }
   // 道具を使うときは、設定が見えるようにパネルを出す
   if (t && $('panel').hidden) togglePanel(true);
-  updateUI();
+  syncPanel(); // 色や枠・矢印の項目も、いまの道具に合わせる (中で updateUI も呼ぶ)
 }
 
 // ---- 切り抜き ----
@@ -410,12 +413,62 @@ function markAt(sx, sy) {
   const p = outToOri(view.toImage(sx, sy));
   for (let i = S.edit.marks.length - 1; i >= 0; i--) {
     const m = S.edit.marks[i];
-    if (p.x >= m.x && p.x <= m.x + m.w && p.y >= m.y && p.y <= m.y + m.h) return i;
+    // 細い矢印でもつかめるよう、画面の 6 px ぶん広げて判定する
+    const pad = m.type === 'arrow' ? 6 / Math.max(0.05, view.percent / 100) : 0;
+    if (p.x >= m.x - pad && p.x <= m.x + m.w + pad && p.y >= m.y - pad && p.y <= m.y + m.h + pad) return i;
   }
   return -1;
 }
 
+// 目印の大きさを変えるつまみ。矢印は両端の 2 つ ('a' = 根もと、'b' = 先)、ほかは四隅と四辺の 8 つ。
+// 位置は、向きを変えた後の絵の座標。
+function markHandles(m) {
+  if (m.type === 'arrow') {
+    const cs = [[m.x, m.y], [m.x + m.w, m.y], [m.x + m.w, m.y + m.h], [m.x, m.y + m.h]], d = m.dir || 0;
+    return { a: cs[d], b: cs[(d + 2) % 4] };
+  }
+  const mx = m.x + m.w / 2, my = m.y + m.h / 2, r = m.x + m.w, b = m.y + m.h;
+  return { nw: [m.x, m.y], n: [mx, m.y], ne: [r, m.y], e: [r, my], se: [r, b], s: [mx, b], sw: [m.x, b], w: [m.x, my] };
+}
+const HANDLE_HIT = 9; // つまみに触れたとみなす距離 (画面の px)
+
+function markHandleAt(sx, sy) {
+  const m = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
+  if (!m) return null;
+  for (const [k, [x, y]] of Object.entries(markHandles(m))) {
+    const o = oriToOut({ x, y }), q = view.toScreen(o.x, o.y);
+    if (Math.abs(sx - q.x) <= HANDLE_HIT && Math.abs(sy - q.y) <= HANDLE_HIT) return k;
+  }
+  return null;
+}
+
+// つまみを引いているときの、新しい目印の位置 (m0 = 引き始めの目印、p = マウスの位置)
+function markResized(m0, h, p, W, H) {
+  const px = Math.max(0, Math.min(W, p.x)), py = Math.max(0, Math.min(H, p.y));
+  if (m0.type === 'arrow') {
+    const hs = markHandles(m0);
+    const A = h === 'a' ? [px, py] : hs.a, B = h === 'b' ? [px, py] : hs.b;
+    // 引き始めの角 (根もと) から先への向きで、角の番号を決める。描き始めと同じ決め方。
+    const dir = B[0] >= A[0] ? (B[1] >= A[1] ? 0 : 3) : (B[1] >= A[1] ? 1 : 2);
+    return { ...m0, x: Math.min(A[0], B[0]), y: Math.min(A[1], B[1]), w: Math.abs(B[0] - A[0]), h: Math.abs(B[1] - A[1]), dir };
+  }
+  let x0 = m0.x, x1 = m0.x + m0.w, y0 = m0.y, y1 = m0.y + m0.h;
+  if (h.includes('w')) x0 = px;
+  if (h.includes('e')) x1 = px;
+  if (h.includes('n')) y0 = py;
+  if (h.includes('s')) y1 = py;
+  // 辺を反対側まで引いたときは、左右 (上下) が入れ替わる
+  return { ...m0, x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.max(1, Math.abs(x1 - x0)), h: Math.max(1, Math.abs(y1 - y0)) };
+}
+
 function markDown(sx, sy) {
+  const hk = markHandleAt(sx, sy);
+  if (hk) {
+    const m = S.edit.marks[S.selMark];
+    S.drag = { kind: 'markResize', i: S.selMark, h: hk, m0: { ...m }, cur: { ...m } };
+    view.draw();
+    return;
+  }
   const i = markAt(sx, sy);
   const p = outToOri(view.toImage(sx, sy));
   S.selMark = i;
@@ -428,6 +481,10 @@ function markDown(sx, sy) {
 function markMove(sx, sy) {
   const d = S.drag, p = outToOri(view.toImage(sx, sy));
   if (d.kind === 'markNew') { d.x1 = p.x; d.y1 = p.y; }
+  else if (d.kind === 'markResize') {
+    const o = orientedSize(S.bw, S.bh, S.edit);
+    d.cur = markResized(d.m0, d.h, p, o.w, o.h);
+  }
   else { d.cur.x = d.m0.x + (p.x - d.px); d.cur.y = d.m0.y + (p.y - d.py); }
   view.draw();
 }
@@ -442,11 +499,19 @@ function markUp() {
     const big = S.tool === 'arrow' ? Math.hypot(w, h) >= 8 : w >= 3 && h >= 3;
     if (big) {
       const r = clampRect({ x, y, w, h }, o.w, o.h);
-      const m = { type: S.tool, ...r, size: settings.markSize, color: PEN_TOOLS.includes(S.tool) ? settings.penColor : settings.markColor };
+      const m = { type: S.tool, ...r, size: settings.markSize, color: settings.markColor };
+      if (PEN_TOOLS.includes(S.tool)) applyStyle(m, penStyle(settings, S.tool)); // 枠・矢印は、その道具で最後に使った設定で描く
       // 矢印は、引き始めた角を覚えておく (0 = 左上、1 = 右上、2 = 右下、3 = 左下)
       if (S.tool === 'arrow') m.dir = d.x1 >= d.x0 ? (d.y1 >= d.y0 ? 0 : 3) : (d.y1 >= d.y0 ? 1 : 2);
       S.edit.marks.push(m);
       S.selMark = S.edit.marks.length - 1;
+      commit();
+    }
+  } else if (d.kind === 'markResize') {
+    const r = clampRect(d.cur, o.w, o.h), m = S.edit.marks[d.i];
+    if (r.x !== m.x || r.y !== m.y || r.w !== m.w || r.h !== m.h || d.cur.dir !== m.dir) {
+      Object.assign(m, { x: r.x, y: r.y, w: r.w, h: r.h });
+      if (m.type === 'arrow') m.dir = d.cur.dir;
       commit();
     }
   } else if (d.cur.x !== d.m0.x || d.cur.y !== d.m0.y) {
@@ -456,6 +521,45 @@ function markUp() {
   }
   rebuild(true);
   syncPanel();
+}
+
+// いま枠・矢印の設定が効く道具。選んでいる目印があればその種類、なければ使っている道具。枠・矢印でなければ null。
+function penTarget() {
+  const sel = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
+  const t = sel ? sel.type : S.tool;
+  return PEN_TOOLS.includes(t) ? t : null;
+}
+
+// 枠・矢印の設定を変える。その道具の設定として覚え (保存は離したとき)、選んでいる目印にも当てる。
+function penSet(patch) {
+  const t = penTarget();
+  if (!t) return;
+  const sel = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
+  // 以前の版の目印は、見た目はそのまま新しい形に直してから変える
+  if (sel && sel.type === t) applyStyle(sel, { ...styleOfMark(sel), ...patch });
+  setPenStyle(settings, t, patch);
+  if (sel && sel.type === t) rebuild(true);
+  syncPanel();
+}
+
+// 登録の呼び出し (save = false) と、いまの設定の登録 (save = true)。i は 0 から。
+function penPreset(i, save) {
+  const t = penTarget();
+  if (!t || i < 0 || i >= PRESET_SLOTS) return;
+  const sel = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
+  if (save) {
+    const cur = sel && sel.type === t ? styleOfMark(sel) : penStyle(settings, t);
+    savePreset(settings, t, i, cur);
+    saveSettings();
+    toast(`${i + 1} 番に登録した (${describeStyle(t, cur)})`);
+    syncPanel();
+    return;
+  }
+  const ps = presetOf(settings, t, i);
+  if (!ps) { toast(`${i + 1} 番は未登録 (Shift + ${i + 1} で、いまの設定を登録)`); return; }
+  penSet(ps);
+  saveSettings();
+  if (sel && sel.type === t) commit();
 }
 
 function markDelete() {
@@ -490,12 +594,31 @@ function drawMarks(g) {
   };
   g.save();
   S.edit.marks.forEach((m, i) => {
-    const moving = S.drag && S.drag.kind === 'markMove' && S.drag.i === i;
+    const moving = S.drag && (S.drag.kind === 'markMove' || S.drag.kind === 'markResize') && S.drag.i === i;
     box(moving ? S.drag.cur : m, i === S.selMark ? '#ff3b6b' : '#ffffff', i === S.selMark ? [] : [4, 3]);
   });
   if (S.drag && S.drag.kind === 'markNew') {
     const d = S.drag;
     box({ x: Math.min(d.x0, d.x1), y: Math.min(d.y0, d.y1), w: Math.abs(d.x1 - d.x0), h: Math.abs(d.y1 - d.y0) }, '#ff3b6b', []);
+  }
+  // 選んでいる目印のつまみ (引くと大きさ・向きが変わる)。矢印は、両端のつまみと、それを結ぶ線も出す。
+  const sel = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
+  if (sel && !(S.drag && S.drag.kind === 'markNew')) {
+    const m = S.drag && S.drag.i === S.selMark && S.drag.cur ? S.drag.cur : sel;
+    const hs = markHandles(m), pt = ([x, y]) => { const o = oriToOut({ x, y }); return view.toScreen(o.x, o.y); };
+    g.setLineDash([]);
+    if (m.type === 'arrow') {
+      const a = pt(hs.a), b = pt(hs.b);
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y);
+      g.strokeStyle = '#101216'; g.lineWidth = 3; g.stroke();
+      g.strokeStyle = '#ff3b6b'; g.lineWidth = 1; g.stroke();
+    }
+    g.fillStyle = '#ffffff'; g.strokeStyle = '#101216'; g.lineWidth = 1;
+    for (const h of Object.values(hs)) {
+      const q = pt(h);
+      if (m.type === 'arrow') { g.beginPath(); g.arc(q.x, q.y, 5, 0, Math.PI * 2); g.fill(); g.stroke(); }
+      else { g.fillRect(Math.round(q.x) - 4, Math.round(q.y) - 4, 8, 8); g.strokeRect(Math.round(q.x) - 4.5, Math.round(q.y) - 4.5, 9, 9); }
+    }
   }
   g.restore();
 }
@@ -734,10 +857,29 @@ function syncPanel() {
   for (const b of document.querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === S.tool);
   // 色の欄: 選んでいる目印があればその色、なければ、いまの道具で使う色
   const sel = S.selMark >= 0 ? e.marks[S.selMark] : null;
-  const pen = sel ? PEN_TOOLS.includes(sel.type) : PEN_TOOLS.includes(S.tool);
-  $('mark-color-label').textContent = pen ? '線の色' : '塗る色';
-  $('mark-color').value = sel && sel.color ? sel.color : pen ? settings.penColor : settings.markColor;
-  if (sel) { $('mark-size').value = sel.size; $('mark-size-v').textContent = sel.size; }
+  const pt = penTarget();
+  $('mark-color-label').textContent = pt ? '線の色' : '塗る色';
+  const st = pt ? (sel && PEN_TOOLS.includes(sel.type) ? styleOfMark(sel) : penStyle(settings, pt)) : null;
+  $('mark-color').value = st ? st.color : sel && sel.color ? sel.color : settings.markColor;
+  if (sel && !pt) { $('mark-size').value = sel.size; $('mark-size-v').textContent = sel.size; }
+  // 枠・矢印の項目。枠・矢印を描いている (または選んでいる) ときだけ出す。
+  $('size-row').hidden = !!pt;
+  $('pen-opts').hidden = !pt;
+  if (st) {
+    $('pen-lw').value = st.lw; $('pen-lw-v').textContent = st.lw;
+    $('pen-op').value = st.opacity; $('pen-op-v').textContent = st.opacity;
+    $('pen-shadow').checked = st.shadow;
+    $('pen-frame-opts').hidden = pt !== 'frame';
+    $('pen-arrow-opts').hidden = pt !== 'arrow';
+    if (pt === 'frame') { $('pen-dash').checked = st.dash; $('pen-radius').value = st.radius; $('pen-radius-v').textContent = st.radius; }
+    else $('pen-taper').checked = st.taper;
+    document.querySelectorAll('#pen-presets button').forEach((b, i) => {
+      const ps = presetOf(settings, pt, i);
+      b.classList.toggle('set', !!ps);
+      b.style.setProperty('--sw', ps ? ps.color : 'transparent');
+      b.title = ps ? `${i + 1} 番: ${describeStyle(pt, ps)}\nクリックで呼び出す ／ Shift + クリックで、いまの設定に入れ替える` : `${i + 1} 番: 未登録\nShift + クリックで、いまの設定を登録`;
+    });
+  }
   updateUI();
 }
 
@@ -774,7 +916,7 @@ function updateUI() {
   $('st-edit').hidden = !S.bmp || isIdentity(S.edit);
   $('st-tool').textContent = S.showOriginal ? '元の絵を表示中'
     : S.tool === 'crop' ? '切り抜き: Enter で決定 ／ Esc でやめる'
-    : isMarkTool() ? `${TOOL_NAMES[S.tool]}: ドラッグで描く ／ Delete で消す ／ Esc で終わる`
+    : isMarkTool() ? `${TOOL_NAMES[S.tool]}: ドラッグで描く ／ Delete で消す ／ Esc で終わる${PEN_TOOLS.includes(S.tool) ? ' ／ 数字 1〜5 で登録を呼ぶ (Shift で登録)' : ''}`
     : S.loading ? '読み込み中…'
     : S.anim ? `動く画像 (${S.anim.frames} コマ)${S.player ? '' : ' ／ 編集中は最初の 1 コマ'}`
     : '';
@@ -924,11 +1066,24 @@ function wirePanel() {
   // 色の欄は 1 つ。塗りつぶしの色と、枠・矢印の色を、道具に合わせて切り替えて使う。
   $('mark-color').addEventListener('input', () => {
     const v = $('mark-color').value, m = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
-    const pen = m ? PEN_TOOLS.includes(m.type) : PEN_TOOLS.includes(S.tool);
-    if (pen) settings.penColor = v; else settings.markColor = v;
-    if (m && ['fill', 'frame', 'arrow'].includes(m.type)) { m.color = v; rebuild(true); }
+    if (penTarget()) { penSet({ color: v }); return; }
+    settings.markColor = v;
+    if (m && m.type === 'fill') { m.color = v; rebuild(true); }
   });
   $('mark-color').addEventListener('change', () => { saveSettings(); if (S.selMark >= 0) commit(); });
+
+  // 枠・矢印の項目。変えたら、その道具の「最後に使った設定」として覚え、選んでいる目印にも当てる。
+  const penInput = (id, key, conv = Number) => {
+    $(id).addEventListener('input', () => penSet({ [key]: conv($(id).value) }));
+    $(id).addEventListener('change', () => { saveSettings(); if (S.selMark >= 0) commit(); });
+  };
+  penInput('pen-lw', 'lw'); penInput('pen-op', 'opacity'); penInput('pen-radius', 'radius');
+  for (const [id, key] of [['pen-shadow', 'shadow'], ['pen-dash', 'dash'], ['pen-taper', 'taper']]) {
+    $(id).addEventListener('change', () => { penSet({ [key]: $(id).checked }); saveSettings(); if (S.selMark >= 0) commit(); });
+  }
+  document.querySelectorAll('#pen-presets button').forEach((b, i) => {
+    b.addEventListener('click', (ev) => penPreset(i, ev.shiftKey));
+  });
 
   $('set-confirm').value = settings.confirmDelete ? '1' : '0';
   $('set-confirm').addEventListener('change', () => { settings.confirmDelete = $('set-confirm').value === '1'; saveSettings(); });
@@ -1156,6 +1311,13 @@ function wireKeys() {
       return;
     }
 
+    // 枠・矢印を描いている間は、数字キー 1〜5 で登録を呼ぶ (Shift で登録)。「等倍」の 1 より優先。
+    if (!ctrl && !e.altKey && PEN_TOOLS.includes(S.tool) && /^Digit[1-5]$/.test(e.code || '')) {
+      penPreset(Number(e.code.slice(5)) - 1, e.shiftKey);
+      e.preventDefault();
+      return;
+    }
+
     const spec = specOf(e);
     const id = spec && actionFor(spec);
     if (id && HANDLERS[id]) {
@@ -1211,7 +1373,7 @@ async function start() {
   window.__iv = {
     S, view, folder, crop, settings, kept,
     openPath, openBlob, go, goto, rebuild, commit, undo, redo, resetAll, doRotate, doFlip, setTool,
-    cropApply, cropCancel, cropClear, setResize, markDelete, markClear,
+    cropApply, cropCancel, cropClear, setResize, markDelete, markClear, penSet, penPreset,
     quickExport, saveAs, saveOver, copyImage, removeCurrent, renameCurrent, togglePanel, toggleFull, syncPanel, reload,
   };
 
