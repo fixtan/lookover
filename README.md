@@ -22,6 +22,7 @@ I built it for myself as a replacement for Honeyview, because I was tired of ope
 - Brightness, contrast, saturation, temperature, tint, highlights, shadows, sharpen (WebGL)
 - Mosaic, blur, fill
 - Frame and arrow: line width, color, opacity, shadow; dashed and rounded frames, tapered arrows. Each tool remembers its last settings, and keys <kbd>1</kbd>–<kbd>5</kbd> recall saved presets (<kbd>Shift</kbd>+digit saves). Burned into the image on export
+- Speech bubble (<kbd>T</kbd>) and text-only note (<kbd>Shift</kbd>+<kbd>T</kbd>): rounded box with a tail pointing at any spot (root edge chosen automatically, root thickness adjustable), font choice, outline, glow. Resizing by a corner scales the text with the box; text that overflows is clipped. Editable after placement (move, resize, drag the tail tip, double-click to edit the text)
 - Undo / redo, and edits are remembered per file while the app is open
 
 **Export**
@@ -54,7 +55,7 @@ Requires WebView2 (preinstalled on Windows 11).
 - No HEIC / JXL / RAW. There is a hook for it (`registerDecoder` in `src/decode.js`), nothing plugged in yet
 - Exporting drops EXIF and the ICC profile (orientation is baked into the pixels)
 - Unsaved edits are lost when the app closes, without a prompt
-- No text tool, no free-angle rotation, no batch export, no thumbnail grid, no archive (zip/rar) browsing
+- No free-angle rotation, no batch export, no thumbnail grid, no archive (zip/rar) browsing
 - Checked on Windows 11, macOS (Intel) and Linux (AppImage). Apple Silicon Macs are not verified on real hardware. The UI strings are Japanese
 
 ## Build from source

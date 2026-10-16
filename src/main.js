@@ -23,10 +23,11 @@ import { applyAdjust } from './adjust.js';
 import { CropTool } from './crop.js';
 import { FORMATS, formatOfExt, encode, usableFormat, uniquePath, fmtBytes } from './export.js';
 import { settings, saveSettings } from './settings.js';
-import { toast, confirmBox, promptBox, showHelp, editKeys, setKeysHook, editPresets, modalOpen } from './ui.js';
+import { toast, confirmBox, promptBox, textBox, showHelp, editKeys, setKeysHook, editPresets, modalOpen } from './ui.js';
 import { Player } from './anim.js';
 import {
   PEN_TOOLS, PEN_LIMITS, PRESET_SLOTS, penStyle, setPenStyle, styleOfMark, applyStyle, presetOf, savePreset, describeStyle,
+  calloutHit, fitFontSize, defaultTip,
 } from './annotate.js';
 import { specOf, baseKey, actionFor, bindingsOf, firstLabel, wheelSpec, wheelDir, mouseSpec, KEY_ONLY } from './keys.js';
 
@@ -64,9 +65,9 @@ const S = {
 // ほかの画像へ移っても、編集の内容を覚えておく。path → { edit, hist, hpos }
 const kept = new Map();
 
-const MARK_TOOLS = ['mosaic', 'blur', 'fill', 'frame', 'arrow'];
+const MARK_TOOLS = ['mosaic', 'blur', 'fill', 'frame', 'arrow', 'callout'];
 // 隠すのではなく目印を描く道具 (枠・矢印) の設定は、annotate.js の penStyle (道具ごとに最後の設定を覚える)
-const TOOL_NAMES = { mosaic: 'モザイク', blur: 'ぼかし', fill: '塗りつぶし', frame: '枠', arrow: '矢印' };
+const TOOL_NAMES = { mosaic: 'モザイク', blur: 'ぼかし', fill: '塗りつぶし', frame: '枠', arrow: '矢印', callout: '吹き出し' };
 const isMarkTool = () => MARK_TOOLS.includes(S.tool);
 
 // ======================================================================
@@ -413,8 +414,9 @@ function markAt(sx, sy) {
   const p = outToOri(view.toImage(sx, sy));
   for (let i = S.edit.marks.length - 1; i >= 0; i--) {
     const m = S.edit.marks[i];
-    // 細い矢印でもつかめるよう、画面の 6 px ぶん広げて判定する
-    const pad = m.type === 'arrow' ? 6 / Math.max(0.05, view.percent / 100) : 0;
+    // 細い矢印や、吹き出しの尖りでもつかめるよう、画面の 6 px ぶん広げて判定する
+    const pad = m.type === 'arrow' || m.type === 'callout' ? 6 / Math.max(0.05, view.percent / 100) : 0;
+    if (m.type === 'callout') { if (calloutHit(m, p, pad)) return i; continue; }
     if (p.x >= m.x - pad && p.x <= m.x + m.w + pad && p.y >= m.y - pad && p.y <= m.y + m.h + pad) return i;
   }
   return -1;
@@ -428,7 +430,10 @@ function markHandles(m) {
     return { a: cs[d], b: cs[(d + 2) % 4] };
   }
   const mx = m.x + m.w / 2, my = m.y + m.h / 2, r = m.x + m.w, b = m.y + m.h;
-  return { nw: [m.x, m.y], n: [mx, m.y], ne: [r, m.y], e: [r, my], se: [r, b], s: [mx, b], sw: [m.x, b], w: [m.x, my] };
+  const box = { nw: [m.x, m.y], n: [mx, m.y], ne: [r, m.y], e: [r, my], se: [r, b], s: [mx, b], sw: [m.x, b], w: [m.x, my] };
+  // 吹き出しは、箱の 8 つに、尖りの先端のつまみを足す (先端が箱の中にあっても、引き出せるよう出しておく)
+  if (m.type === 'callout' && m.box !== false && m.tip !== false && m.tx !== undefined) return { tip: [m.tx, m.ty], ...box };
+  return box;
 }
 const HANDLE_HIT = 9; // つまみに触れたとみなす距離 (画面の px)
 
@@ -451,6 +456,19 @@ function markResized(m0, h, p, W, H) {
     // 引き始めの角 (根もと) から先への向きで、角の番号を決める。描き始めと同じ決め方。
     const dir = B[0] >= A[0] ? (B[1] >= A[1] ? 0 : 3) : (B[1] >= A[1] ? 1 : 2);
     return { ...m0, x: Math.min(A[0], B[0]), y: Math.min(A[1], B[1]), w: Math.abs(B[0] - A[0]), h: Math.abs(B[1] - A[1]), dir };
+  }
+  if (m0.type === 'callout') {
+    // 先端のつまみは、先端だけ動かす
+    if (h === 'tip') return { ...m0, tx: px, ty: py };
+    // 角のつまみは、縦横比を保って拡縮し、文字の大きさも同じ比で変える (箱の大きさに文字を合わせる)。辺のつまみは、箱だけ変える。
+    if (h.length === 2) {
+      const sx = h.includes('e') ? 1 : -1, sy = h.includes('s') ? 1 : -1;
+      const ax = sx > 0 ? m0.x : m0.x + m0.w, ay = sy > 0 ? m0.y : m0.y + m0.h; // 動かさない側の角
+      const kMax = Math.min((sx > 0 ? W - ax : ax) / m0.w, (sy > 0 ? H - ay : ay) / m0.h); // 絵からはみ出さない範囲
+      const k = Math.max(Math.min(Math.max(((px - ax) * sx) / m0.w, ((py - ay) * sy) / m0.h), kMax), 1 / Math.max(m0.w, m0.h));
+      const w = m0.w * k, hh = m0.h * k;
+      return { ...m0, x: sx > 0 ? ax : ax - w, y: sy > 0 ? ay : ay - hh, w, h: hh, fs: (m0.fs > 0 ? m0.fs : 24) * k };
+    }
   }
   let x0 = m0.x, x1 = m0.x + m0.w, y0 = m0.y, y1 = m0.y + m0.h;
   if (h.includes('w')) x0 = px;
@@ -485,42 +503,88 @@ function markMove(sx, sy) {
     const o = orientedSize(S.bw, S.bh, S.edit);
     d.cur = markResized(d.m0, d.h, p, o.w, o.h);
   }
-  else { d.cur.x = d.m0.x + (p.x - d.px); d.cur.y = d.m0.y + (p.y - d.py); }
+  else {
+    d.cur.x = d.m0.x + (p.x - d.px); d.cur.y = d.m0.y + (p.y - d.py);
+    // 吹き出しは、尖りも一緒に動く
+    if (d.m0.tx !== undefined) { d.cur.tx = d.m0.tx + (p.x - d.px); d.cur.ty = d.m0.ty + (p.y - d.py); }
+  }
   view.draw();
 }
 
 function markUp() {
   const d = S.drag;
   S.drag = null;
+  let newCallout = -1; // 作ったばかりの吹き出しの番号 (文字を入れてもらってから、履歴に積む)
   const o = orientedSize(S.bw, S.bh, S.edit);
   if (d.kind === 'markNew') {
     const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
     // 矢印は、真横や真下にも引けるように、長さで判定する。ほかは、縦横とも 3 画素以上。
-    const big = S.tool === 'arrow' ? Math.hypot(w, h) >= 8 : w >= 3 && h >= 3;
+    const big = S.tool === 'arrow' ? Math.hypot(w, h) >= 8 : S.tool === 'callout' ? w >= 8 && h >= 8 : w >= 3 && h >= 3;
     if (big) {
       const r = clampRect({ x, y, w, h }, o.w, o.h);
       const m = { type: S.tool, ...r, size: settings.markSize, color: settings.markColor };
       if (PEN_TOOLS.includes(S.tool)) applyStyle(m, penStyle(settings, S.tool)); // 枠・矢印は、その道具で最後に使った設定で描く
       // 矢印は、引き始めた角を覚えておく (0 = 左上、1 = 右上、2 = 右下、3 = 左下)
       if (S.tool === 'arrow') m.dir = d.x1 >= d.x0 ? (d.y1 >= d.y0 ? 0 : 3) : (d.y1 >= d.y0 ? 1 : 2);
+      if (S.tool === 'callout') Object.assign(m, defaultTip(r, o.w, o.h), { text: '', fs: 24 });
       S.edit.marks.push(m);
       S.selMark = S.edit.marks.length - 1;
-      commit();
+      if (S.tool === 'callout') newCallout = S.selMark; else commit();
     }
   } else if (d.kind === 'markResize') {
-    const r = clampRect(d.cur, o.w, o.h), m = S.edit.marks[d.i];
-    if (r.x !== m.x || r.y !== m.y || r.w !== m.w || r.h !== m.h || d.cur.dir !== m.dir) {
+    const r = clampRect(d.cur, o.w, o.h), m = S.edit.marks[d.i], co = m.type === 'callout';
+    // 吹き出しは、文字の大きさと尖りの先端も一緒に変わる
+    const fs = co && d.cur.fs > 0 ? Math.round(d.cur.fs) : m.fs;
+    const tx = co && d.cur.tx !== undefined ? Math.round(d.cur.tx) : m.tx, ty = co && d.cur.ty !== undefined ? Math.round(d.cur.ty) : m.ty;
+    if (r.x !== m.x || r.y !== m.y || r.w !== m.w || r.h !== m.h || d.cur.dir !== m.dir || (co && (fs !== m.fs || tx !== m.tx || ty !== m.ty))) {
       Object.assign(m, { x: r.x, y: r.y, w: r.w, h: r.h });
       if (m.type === 'arrow') m.dir = d.cur.dir;
+      if (co) Object.assign(m, { fs, tx, ty });
       commit();
     }
   } else if (d.cur.x !== d.m0.x || d.cur.y !== d.m0.y) {
-    const r = clampRect(d.cur, o.w, o.h);
-    Object.assign(S.edit.marks[d.i], { x: r.x, y: r.y });
+    const r = clampRect(d.cur, o.w, o.h), m = S.edit.marks[d.i];
+    Object.assign(m, { x: r.x, y: r.y });
+    // 吹き出しは、箱が動いた分だけ、尖りの先端も動かす
+    if (m.tx !== undefined) {
+      m.tx = Math.max(0, Math.min(o.w, Math.round(d.m0.tx + (r.x - d.m0.x))));
+      m.ty = Math.max(0, Math.min(o.h, Math.round(d.m0.ty + (r.y - d.m0.y))));
+    }
     commit();
   }
   rebuild(true);
   syncPanel();
+  if (newCallout >= 0) calloutText(newCallout, true);
+}
+
+// 吹き出し・文字の文字を入れる (isNew = 作ったばかり)。作ったばかりのものは、文字を決めたときに初めて履歴に積み、
+// 文字の大きさを、箱に収まる大きさに合わせる (1 回だけ)。やめたら、作ったものも消す。
+async function calloutText(i, isNew) {
+  const m = S.edit.marks[i];
+  if (!m || m.type !== 'callout') return;
+  const t = await textBox({ title: isNew ? '吹き出しの文字' : '文字を直す', value: m.text || '' });
+  if (S.edit.marks[i] !== m) return;
+  if (t === null || (isNew && !t.trim())) {
+    if (isNew) { S.edit.marks.splice(i, 1); S.selMark = -1; rebuild(true); syncPanel(); }
+    return;
+  }
+  const text = t.replace(/\s+$/, '');
+  if (!isNew && text === m.text) return;
+  m.text = text;
+  if (isNew) m.fs = fitFontSize(text, m.w, m.h, m.font);
+  commit();
+  rebuild(true);
+  syncPanel();
+}
+
+// 吹き出し (箱と尖り) か、文字だけの道具にする。同じ道具をもう一度選んだら、やめる。
+function calloutTool(withBox) {
+  if (!S.bmp) return;
+  if (S.tool === 'callout' && penStyle(settings, 'callout').box === withBox) { setTool('callout'); return; }
+  setPenStyle(settings, 'callout', { box: withBox });
+  saveSettings();
+  if (S.tool !== 'callout') setTool('callout');
+  else { S.selMark = -1; view.draw(); syncPanel(); }
 }
 
 // いま枠・矢印の設定が効く道具。選んでいる目印があればその種類、なければ使っている道具。枠・矢印でなければ null。
@@ -614,9 +678,9 @@ function drawMarks(g) {
       g.strokeStyle = '#ff3b6b'; g.lineWidth = 1; g.stroke();
     }
     g.fillStyle = '#ffffff'; g.strokeStyle = '#101216'; g.lineWidth = 1;
-    for (const h of Object.values(hs)) {
+    for (const [k, h] of Object.entries(hs)) {
       const q = pt(h);
-      if (m.type === 'arrow') { g.beginPath(); g.arc(q.x, q.y, 5, 0, Math.PI * 2); g.fill(); g.stroke(); }
+      if (m.type === 'arrow' || k === 'tip') { g.beginPath(); g.arc(q.x, q.y, 5, 0, Math.PI * 2); g.fill(); g.stroke(); }
       else { g.fillRect(Math.round(q.x) - 4, Math.round(q.y) - 4, 8, 8); g.strokeRect(Math.round(q.x) - 4.5, Math.round(q.y) - 4.5, 9, 9); }
     }
   }
@@ -855,10 +919,13 @@ function syncPanel() {
   $('btn-crop-clear').disabled = !(e.crop || S.tool === 'crop');
   $('btn-mark-clear').disabled = !e.marks.length;
   for (const b of document.querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === S.tool);
+  const withBox = penStyle(settings, 'callout').box;
+  $('btn-callout').classList.toggle('on', S.tool === 'callout' && withBox);
+  $('btn-text').classList.toggle('on', S.tool === 'callout' && !withBox);
   // 色の欄: 選んでいる目印があればその色、なければ、いまの道具で使う色
   const sel = S.selMark >= 0 ? e.marks[S.selMark] : null;
   const pt = penTarget();
-  $('mark-color-label').textContent = pt ? '線の色' : '塗る色';
+  $('mark-color-label').textContent = pt === 'callout' ? '縁の色' : pt ? '線の色' : '塗る色';
   const st = pt ? (sel && PEN_TOOLS.includes(sel.type) ? styleOfMark(sel) : penStyle(settings, pt)) : null;
   $('mark-color').value = st ? st.color : sel && sel.color ? sel.color : settings.markColor;
   if (sel && !pt) { $('mark-size').value = sel.size; $('mark-size-v').textContent = sel.size; }
@@ -871,6 +938,18 @@ function syncPanel() {
     $('pen-shadow').checked = st.shadow;
     $('pen-frame-opts').hidden = pt !== 'frame';
     $('pen-arrow-opts').hidden = pt !== 'arrow';
+    $('pen-callout-opts').hidden = pt !== 'callout';
+    if (pt === 'callout') {
+      $('co-box').checked = st.box; $('co-tip').checked = st.tip; $('co-tip').disabled = !st.box; $('co-outline').checked = st.outline;
+      $('co-fill').value = st.fill; $('co-textcolor').value = st.textColor; $('co-font').value = st.font;
+      $('co-root').value = Math.round(st.root * 100); $('co-root-v').textContent = Math.round(st.root * 100);
+      $('co-radius').value = st.radius; $('co-radius-v').textContent = st.radius;
+      $('co-glow').value = st.glow; $('co-glow-v').textContent = st.glow;
+      // 文字の大きさと「文字を直す」は、吹き出しを 1 つ選んでいるときだけ
+      const sc = sel && sel.type === 'callout' ? sel : null;
+      $('co-fs-row').hidden = !sc; $('btn-co-edit').hidden = !sc;
+      if (sc) { $('co-fs').value = sc.fs; $('co-fs-v').textContent = sc.fs; }
+    }
     if (pt === 'frame') { $('pen-dash').checked = st.dash; $('pen-radius').value = st.radius; $('pen-radius-v').textContent = st.radius; }
     else $('pen-taper').checked = st.taper;
     document.querySelectorAll('#pen-presets button').forEach((b, i) => {
@@ -916,6 +995,7 @@ function updateUI() {
   $('st-edit').hidden = !S.bmp || isIdentity(S.edit);
   $('st-tool').textContent = S.showOriginal ? '元の絵を表示中'
     : S.tool === 'crop' ? '切り抜き: Enter で決定 ／ Esc でやめる'
+    : S.tool === 'callout' ? `${penStyle(settings, 'callout').box ? '吹き出し' : '文字'}: ドラッグで範囲を作って、文字を入れる ／ ダブルクリックで文字を直す ／ Delete で消す ／ Esc で終わる ／ 数字 1〜5 で登録を呼ぶ (Shift で登録)`
     : isMarkTool() ? `${TOOL_NAMES[S.tool]}: ドラッグで描く ／ Delete で消す ／ Esc で終わる${PEN_TOOLS.includes(S.tool) ? ' ／ 数字 1〜5 で登録を呼ぶ (Shift で登録)' : ''}`
     : S.loading ? '読み込み中…'
     : S.anim ? `動く画像 (${S.anim.frames} コマ)${S.player ? '' : ' ／ 編集中は最初の 1 コマ'}`
@@ -983,6 +1063,8 @@ const ACTIONS = {
   },
   'mark-mosaic': () => setTool('mosaic'), 'mark-blur': () => setTool('blur'), 'mark-fill': () => setTool('fill'),
   'mark-frame': () => setTool('frame'), 'mark-arrow': () => setTool('arrow'),
+  'mark-callout': () => calloutTool(true), 'mark-text': () => calloutTool(false),
+  coEdit: () => { if (S.selMark >= 0) calloutText(S.selMark, false); },
   help: () => showHelp(),
   keys: () => editKeys(),
   markClear,
@@ -1000,7 +1082,7 @@ const ACTIONS = {
 // ボタンの吹き出しと、下の「操作の一覧」の札を、いまの割り当てに合わせる
 const HINT_ACTIONS = {
   rotL: 'rotL', rotR: 'rotR', flipH: 'flipH', flipV: 'flipV', crop: 'crop',
-  'mark-mosaic': 'mosaic', 'mark-blur': 'blur', 'mark-fill': 'fill', 'mark-frame': 'frame', 'mark-arrow': 'arrow',
+  'mark-mosaic': 'mosaic', 'mark-blur': 'blur', 'mark-fill': 'fill', 'mark-frame': 'frame', 'mark-arrow': 'arrow', 'mark-callout': 'callout', 'mark-text': 'text',
   saveAs: 'saveAs', save: 'save', copy: 'copy', undo: 'undo', redo: 'redo', help: 'help',
 };
 
@@ -1078,7 +1160,24 @@ function wirePanel() {
     $(id).addEventListener('change', () => { saveSettings(); if (S.selMark >= 0) commit(); });
   };
   penInput('pen-lw', 'lw'); penInput('pen-op', 'opacity'); penInput('pen-radius', 'radius');
-  for (const [id, key] of [['pen-shadow', 'shadow'], ['pen-dash', 'dash'], ['pen-taper', 'taper']]) {
+  penInput('co-root', 'root', (v) => Number(v) / 100); penInput('co-glow', 'glow'); penInput('co-radius', 'radius');
+  for (const id of ['co-fill', 'co-textcolor']) {
+    const key = id === 'co-fill' ? 'fill' : 'textColor';
+    $(id).addEventListener('input', () => penSet({ [key]: $(id).value }));
+    $(id).addEventListener('change', () => { saveSettings(); if (S.selMark >= 0) commit(); });
+  }
+  $('co-font').addEventListener('change', () => { penSet({ font: $('co-font').value }); saveSettings(); if (S.selMark >= 0) commit(); });
+  // 文字の大きさは、選んでいる吹き出しだけに当たる (箱を作って文字を入れたときに、箱に合わせて決まる)
+  const selCallout = () => (S.selMark >= 0 && S.edit.marks[S.selMark].type === 'callout' ? S.edit.marks[S.selMark] : null);
+  $('co-fs').addEventListener('input', () => {
+    const m = selCallout();
+    if (!m) return;
+    m.fs = Number($('co-fs').value);
+    $('co-fs-v').textContent = m.fs;
+    rebuild(true);
+  });
+  $('co-fs').addEventListener('change', () => { if (selCallout()) { commit(); updateUI(); } });
+  for (const [id, key] of [['pen-shadow', 'shadow'], ['pen-dash', 'dash'], ['pen-taper', 'taper'], ['co-box', 'box'], ['co-tip', 'tip'], ['co-outline', 'outline']]) {
     $(id).addEventListener('change', () => { penSet({ [key]: $(id).checked }); saveSettings(); if (S.selMark >= 0) commit(); });
   }
   document.querySelectorAll('#pen-presets button').forEach((b, i) => {
@@ -1196,8 +1295,15 @@ function wirePointer() {
   $('st-help').addEventListener('click', () => HANDLERS.help());
 
   cv.addEventListener('dblclick', (e) => {
-    if (!S.out || S.tool) return;
+    if (!S.out) return;
     const p = local(e);
+    // 選んでいる吹き出しをダブルクリックしたら、文字を直す
+    if (isMarkTool()) {
+      const m = S.selMark >= 0 ? S.edit.marks[S.selMark] : null;
+      if (m && m.type === 'callout' && markAt(p.x, p.y) === S.selMark) calloutText(S.selMark, false);
+      return;
+    }
+    if (S.tool) return;
     // 等倍なら全体表示へ、そうでなければ、押した場所を中心に等倍へ
     const one = view.actual;
     if (Math.abs(view.scale - one) < 1e-6 && view.fitScale() < one) view.fit();
@@ -1282,6 +1388,7 @@ const HANDLERS = {
   crop: () => setTool('crop'),
   mosaic: () => setTool('mosaic'), blur: () => setTool('blur'), fill: () => setTool('fill'),
   frame: () => setTool('frame'), arrow: () => setTool('arrow'),
+  callout: () => calloutTool(true), text: () => calloutTool(false),
   undo: () => undo(), redo: () => redo(),
   save: () => saveOver(), saveAs: () => saveAs(),
   ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => ['export' + (i + 1), () => quickExport(i)])),
@@ -1373,7 +1480,7 @@ async function start() {
   window.__iv = {
     S, view, folder, crop, settings, kept,
     openPath, openBlob, go, goto, rebuild, commit, undo, redo, resetAll, doRotate, doFlip, setTool,
-    cropApply, cropCancel, cropClear, setResize, markDelete, markClear, penSet, penPreset,
+    cropApply, cropCancel, cropClear, setResize, markDelete, markClear, penSet, penPreset, calloutTool, calloutText,
     quickExport, saveAs, saveOver, copyImage, removeCurrent, renameCurrent, togglePanel, toggleFull, syncPanel, reload,
   };
 

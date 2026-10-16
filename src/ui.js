@@ -39,6 +39,11 @@ function openModal(build) {
       // キーを押して登録している間は、押されたキーを全部その処理へ渡す (Esc も含めて)
       if (box.capture) { e.preventDefault(); e.stopPropagation(); box.capture(e); return; }
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(null); return; }
+      // 複数行の入力欄では、Enter は改行。決定は Ctrl + Enter
+      if (box.onCtrlEnter && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault(); e.stopPropagation(); box.onCtrlEnter();
+        return;
+      }
       if (box.onEnter && e.key === 'Enter' && !e.target.matches('textarea, button')) {
         e.preventDefault(); e.stopPropagation(); box.onEnter();
         return;
@@ -46,6 +51,7 @@ function openModal(build) {
       e.stopPropagation();
     };
     box.onEnter = null;
+    box.onCtrlEnter = null;
     box.onShow = null;
     box.capture = null;
     window.addEventListener('keydown', onKey, true);
@@ -98,6 +104,23 @@ export function promptBox({ title, text = '', value = '', ok = '決定', cancel 
   });
 }
 
+// 複数行の文字を入れてもらう。決定したらその文字、やめたら null。Enter は改行、Ctrl + Enter で決定。
+export function textBox({ title, text = '', value = '', ok = '決定', cancel = 'やめる' }) {
+  return openModal((box, close) => {
+    const area = el('textarea', { value, rows: 4, style: 'width: 100%; min-width: 380px; margin-bottom: 12px; resize: vertical; font: inherit; box-sizing: border-box;' });
+    box.append(
+      el('h2', { textContent: title }),
+      el('p', { textContent: text || 'Enter で改行 ／ Ctrl + Enter で決定 ／ Esc でやめる' }),
+      area,
+      el('div', { className: 'row' },
+        el('button', { textContent: cancel, onclick: () => close(null) }),
+        el('button', { textContent: ok, className: 'primary', onclick: () => close(area.value) })),
+    );
+    box.onCtrlEnter = () => close(area.value);
+    box.onShow = () => { area.focus(); area.select(); };
+  });
+}
+
 // ---- 操作の一覧 ----
 
 // 割り当てを変えられない操作 (マウスや、固定のキー)
@@ -113,6 +136,7 @@ const HELP_FIXED = {
     ['Esc', 'やめる・閉じる'],
     ['スライダーをダブルクリック', 'その項目を 0 に戻す'],
     ['切り抜き中の ← → ↑ ↓', '1 画素ずつ動かす (Shift で 10 画素)'],
+    ['選んでいる吹き出しをダブルクリック', '文字を直す'],
   ],
   '出す': [],
 };

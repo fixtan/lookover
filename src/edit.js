@@ -9,7 +9,7 @@
 //
 // 切り抜きの範囲と、隠す範囲は、「向きを変えた後・切り抜く前」の絵の上の座標で持つ。
 
-import { drawPen } from './annotate.js';
+import { drawPen, drawCallout } from './annotate.js';
 
 export const ADJ_KEYS = ['brightness', 'contrast', 'saturation', 'temperature', 'tint', 'highlights', 'shadows', 'sharpen'];
 
@@ -22,10 +22,11 @@ export function emptyEdit() {
     crop: null,    // { x, y, w, h } か、切り抜かないなら null
     resize: null,  // { mode: 'width' | 'height' | 'long' | 'percent', value } か null
     adj,           // 色の調整。どれも -100 〜 100 (sharpen は 0 〜 100)
-    // 絵の上に描き足すもの。隠す (mosaic / blur / fill) と、目印 (frame = 枠、arrow = 矢印)。
+    // 絵の上に描き足すもの。隠す (mosaic / blur / fill) と、目印 (frame = 枠、arrow = 矢印、callout = 吹き出し・文字)。
     //   [{ type, x, y, w, h, size, color, dir, ... }]
     //   size : モザイクの 1 マスの大きさ・ぼかしの強さ
-    //   枠・矢印は、線の太さ・不透明度・影などの項目も持つ (annotate.js)
+    //   枠・矢印・吹き出しは、線の太さ・不透明度・影などの項目も持つ (annotate.js)
+    //   吹き出しは、さらに尖りの先端 tx, ty と、文字 text・文字の大きさ fs などを持つ
     //   dir  : 矢印だけ。範囲の四角の、どの角から対角へ向かうか (0 = 左上、1 = 右上、2 = 右下、3 = 左下)
     marks: [],
   };
@@ -91,10 +92,12 @@ export function outputSize(w, h, e) {
 const DIR_CW = [1, 2, 3, 0], DIR_CCW = [3, 0, 1, 2], DIR_FLIP_H = [1, 0, 3, 2], DIR_FLIP_V = [3, 2, 1, 0];
 const dirOf = (r, map) => (r.dir === undefined ? {} : { dir: map[r.dir] });
 
-const rectCW = (r, W, H) => ({ ...r, x: H - r.y - r.h, y: r.x, w: r.h, h: r.w, ...dirOf(r, DIR_CW) });
-const rectCCW = (r, W, H) => ({ ...r, x: r.y, y: W - r.x - r.w, w: r.h, h: r.w, ...dirOf(r, DIR_CCW) });
-const rectFlipH = (r, W, H) => ({ ...r, x: W - r.x - r.w, ...dirOf(r, DIR_FLIP_H) });
-const rectFlipV = (r, W, H) => ({ ...r, y: H - r.y - r.h, ...dirOf(r, DIR_FLIP_V) });
+// 吹き出しの尖りの先端 (tx, ty) は、箱と同じように写す。文字は回さない (水平のまま、箱の位置と大きさだけが写る)。
+const tipOf = (r, f) => { if (r.tx === undefined) return {}; const [tx, ty] = f(r.tx, r.ty); return { tx, ty }; };
+const rectCW = (r, W, H) => ({ ...r, x: H - r.y - r.h, y: r.x, w: r.h, h: r.w, ...dirOf(r, DIR_CW), ...tipOf(r, (x, y) => [H - y, x]) });
+const rectCCW = (r, W, H) => ({ ...r, x: r.y, y: W - r.x - r.w, w: r.h, h: r.w, ...dirOf(r, DIR_CCW), ...tipOf(r, (x, y) => [y, W - x]) });
+const rectFlipH = (r, W, H) => ({ ...r, x: W - r.x - r.w, ...dirOf(r, DIR_FLIP_H), ...tipOf(r, (x, y) => [W - x, y]) });
+const rectFlipV = (r, W, H) => ({ ...r, y: H - r.y - r.h, ...dirOf(r, DIR_FLIP_V), ...tipOf(r, (x, y) => [x, H - y]) });
 
 function mapRects(e, fn, W, H) {
   if (e.crop) e.crop = fn(e.crop, W, H);
@@ -162,6 +165,10 @@ function drawMark(cv, m) {
   }
   if (m.type === 'frame' || m.type === 'arrow') {
     drawPen(g, m, r); // 枠・矢印の描き方は annotate.js
+    return;
+  }
+  if (m.type === 'callout') {
+    drawCallout(g, m, r); // 吹き出し・文字も annotate.js
     return;
   }
   const size = Math.max(2, m.size || 16);

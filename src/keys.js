@@ -49,6 +49,8 @@ export const ACTION_TABLE = [
   { id: 'fill', group: '直す', label: '塗りつぶし', keys: ['N'] },
   { id: 'frame', group: '直す', label: '枠で囲む', keys: ['K'] },
   { id: 'arrow', group: '直す', label: '矢印', keys: ['A'] },
+  { id: 'callout', group: '直す', label: '吹き出し', keys: ['T'] },
+  { id: 'text', group: '直す', label: '文字だけの注釈', keys: ['Shift+T'] },
   { id: 'undo', group: '直す', label: '取り消す', keys: ['Ctrl+Z'] },
   { id: 'redo', group: '直す', label: 'やり直す', keys: ['Ctrl+Shift+Z', 'Ctrl+Y'] },
   // ---- 出す ----

@@ -99,6 +99,10 @@
           <button data-act="mark-frame" data-tool="frame" title="枠で囲む (K)">枠</button>
           <button data-act="mark-arrow" data-tool="arrow" title="矢印 (A)">矢印</button>
         </div>
+        <div class="row">
+          <button data-act="mark-callout" id="btn-callout" title="吹き出し (T)">吹き出し</button>
+          <button data-act="mark-text" id="btn-text" title="文字だけの注釈 (Shift + T)">文字</button>
+        </div>
         <label class="slider" id="size-row">強さ <span id="mark-size-v">16</span>
           <input type="range" id="mark-size" min="4" max="64" step="1" value="16" />
         </label>
@@ -117,6 +121,39 @@
           </div>
           <div id="pen-arrow-opts">
             <label class="inline"><input type="checkbox" id="pen-taper" /> 先細り (根もとを細く)</label>
+          </div>
+          <div id="pen-callout-opts">
+            <label class="inline"><input type="checkbox" id="co-box" /> 箱をつける</label>
+            <label class="inline"><input type="checkbox" id="co-tip" /> 尖りをつける</label>
+            <div class="row">
+              <label class="inline">塗り <input type="color" id="co-fill" value="#8fd14f" /></label>
+              <label class="inline">文字 <input type="color" id="co-textcolor" value="#111111" /></label>
+            </div>
+            <div class="row">
+              <label class="inline grow">字体
+                <select id="co-font" class="grow">
+                  <option value="gothic">ゴシック</option>
+                  <option value="mincho">明朝</option>
+                  <option value="mono">等幅</option>
+                </select>
+              </label>
+            </div>
+            <label class="slider" id="co-fs-row">文字の大きさ <span id="co-fs-v">24</span>
+              <input type="range" id="co-fs" min="8" max="300" step="1" value="24" />
+            </label>
+            <label class="slider">根もとの太さ <span id="co-root-v">30</span>
+              <input type="range" id="co-root" min="10" max="90" step="1" value="30" />
+            </label>
+            <label class="slider">角の丸み <span id="co-radius-v">20</span>
+              <input type="range" id="co-radius" min="0" max="80" step="1" value="20" />
+            </label>
+            <label class="slider">光彩 <span id="co-glow-v">0</span>
+              <input type="range" id="co-glow" min="0" max="40" step="1" value="0" />
+            </label>
+            <label class="inline"><input type="checkbox" id="co-outline" /> 文字を縁取る</label>
+            <div class="row">
+              <button data-act="coEdit" id="btn-co-edit" title="ダブルクリックでも直せる">文字を直す</button>
+            </div>
           </div>
           <label class="inline"><input type="checkbox" id="pen-shadow" /> 影をつける</label>
           <div class="dim">登録 (数字キー 1〜5 で呼ぶ。Shift + 数字、または Shift + クリックで登録)</div>

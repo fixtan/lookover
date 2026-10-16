@@ -720,6 +720,207 @@ section('注釈 (枠・矢印の見た目、道具ごとの記憶、登録)');
 }
 
 // ----------------------------------------------------------------------
+section('吹き出しと、文字だけの注釈');
+{
+  await open('img1.png');
+  await ev(() => __iv.resetAll());
+  const put = (m) => ev(async (m) => { __iv.S.edit.marks.length = 0; __iv.S.edit.marks.push(m); __iv.commit(); await __iv.rebuild(); }, m);
+  const px = (pts) => ev((pts) => T.px(pts), pts);
+  const near = (a, b, d = 6) => b.every((v, i) => Math.abs(a[i] - v) <= d);
+  const scr = (x, y) => ev(([x, y]) => { const r = document.getElementById('view').getBoundingClientRect(), s = __iv.view.toScreen(x, y); return [r.left + s.x, r.top + s.y]; }, [x, y]);
+  const drag = async (a, b) => { const s = await scr(...a), e = await scr(...b); await p.mouse.move(s[0], s[1]); await p.mouse.down(); await p.mouse.move(e[0], e[1], { steps: 5 }); await p.mouse.up(); };
+  const setRange = (id, v) => ev(([id, v]) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  const setCheck = (id, v) => ev(([id, v]) => { const el = document.getElementById(id); el.checked = v; el.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  const hist = () => ev(() => __iv.S.hpos); // 履歴のどこにいるか (取り消しのあとでも、増減が分かる)
+  const mk = () => ev(() => JSON.parse(JSON.stringify(__iv.S.edit.marks)));
+  const modalOpen = () => ev(() => !document.getElementById('modal').hidden);
+  const reselect = async () => { const q = (await mk())[0]; const c = await scr(q.x + 10, q.y + 10); await p.mouse.click(c[0], c[1]); };
+  const GREEN = [143, 209, 79];
+  const base = { type: 'callout', x: 40, y: 30, w: 100, h: 40, size: 16, color: '#ffffff', fill: '#8fd14f', text: '', fs: 20, tx: 90, ty: 120, lw: 4 };
+
+  // 既定値と、壊れた値の直し方
+  const n = await ev(async () => { const a = await import('/annotate.js'); return [a.normStyle('callout', null), a.normStyle('callout', { root: 5, glow: -3, font: 'zzz', fill: 'x' })]; });
+  ok(n[0].box === true && n[0].tip === true && n[0].root === 0.3 && n[0].glow === 0 && n[0].font === 'gothic' && n[0].fill === '#8fd14f', `吹き出しの既定値 → ${JSON.stringify(n[0])}`);
+  ok(n[1].root === 0.9 && n[1].glow === 0 && n[1].font === 'gothic' && n[1].fill === '#8fd14f', '吹き出し: 壊れた設定は既定の値か範囲内に直る');
+
+  // 描画: 箱と尖りが塗られ、外は塗られない
+  await put({ ...base });
+  let r = await px([[50, 40], [90, 90], [90, 118], [170, 40], [10, 100]]);
+  ok(near(r[0], GREEN) && near(r[1], GREEN), `箱の中と、下向きの尖りが塗られる → ${r[0]} ／ ${r[1]}`);
+  ok(!near(r[3], GREEN) && !near(r[4], GREEN), '箱と尖りの外は塗られない');
+
+  // 尖りの向き: 4 方向とも、尖りの途中が塗られる
+  for (const [tx, ty, probe, name] of [[90, 130, [90, 90], '下'], [90, 5, [90, 15], '上'], [10, 50, [25, 50], '左'], [195, 50, [160, 50], '右']]) {
+    await put({ ...base, tx, ty });
+    const c = (await px([probe]))[0];
+    ok(near(c, GREEN), `尖りが ${name} 向きのとき、根もと側が塗られる → ${c}`);
+  }
+
+  // 箱の外にはみ出す文字は、見えない
+  await put({ ...base, tx: 90, ty: 120, text: 'WWWWWWWWWWWW', fs: 80, color: '#ffffff' });
+  const clipped = await px([[20, 50], [25, 45], [30, 50], [150, 50], [160, 45]]);
+  await put({ ...base, tx: 90, ty: 120, text: '', fs: 80 });
+  const plain = await px([[20, 50], [25, 45], [30, 50], [150, 50], [160, 45]]);
+  ok(JSON.stringify(clipped) === JSON.stringify(plain), '大きすぎる文字は、箱の外に出ない');
+  await put({ ...base, text: 'WWWW', fs: 24, textColor: '#111111' });
+  const inside = await ev(() => { const d = T.data(); let dark = 0; for (let y = 32; y < 68; y++) for (let x = 42; x < 138; x++) { const i = (y * d.width + x) * 4; if (d.data[i] < 60 && d.data[i + 1] < 60) dark++; } return dark; });
+  ok(inside > 50, `箱の中には文字が描かれる (暗い画素 ${inside})`);
+
+  // 箱なし: 文字だけ (背景も尖りもない)
+  await put({ ...base, box: false, tip: false, text: 'WWWW', fs: 24, textColor: '#111111' });
+  const only = await ev(() => { const d = T.data(); let g = 0; for (let i = 0; i < d.data.length; i += 4) if (Math.abs(d.data[i] - 143) < 6 && Math.abs(d.data[i + 1] - 209) < 6 && Math.abs(d.data[i + 2] - 79) < 6) g++; return g; });
+  ok(only === 0, '文字だけのときは、塗りが出ない');
+
+  // 光彩: 縁の外側に色がにじむ
+  await put({ ...base, tx: 90, ty: 120, glow: 0 });
+  const g0 = (await px([[40 - 5, 50]]))[0];
+  await put({ ...base, tx: 90, ty: 120, glow: 20, color: '#ff00ff' });
+  const g1 = (await px([[40 - 5, 50]]))[0];
+  ok(JSON.stringify(g0) !== JSON.stringify(g1) && g1[0] > g0[0] - 1, `光彩を付けると、箱の外側の色が変わる → ${g0} → ${g1}`);
+
+  // 不透明度: 下の絵が透ける (重ね塗りで濃くならない)
+  await put({ ...base, tx: 90, ty: 120, opacity: 50 });
+  const half = (await px([[90, 70 + 5]]))[0]; // 箱と尖りの境目あたり
+  const full = (await px([[60, 50]]))[0];
+  ok(!near(full, GREEN, 3), `不透明度 50 だと、塗りは元の絵と混ざる → ${full}`);
+  await ev(() => __iv.resetAll());
+
+  // ---- 作る: T を押して囲み、文字を入れる ----
+  await p.keyboard.press('Escape');
+  const h0 = await hist();
+  await p.keyboard.press('t');
+  ok(await ev(() => __iv.S.tool === 'callout' && !document.getElementById('pen-callout-opts').hidden && document.getElementById('pen-frame-opts').hidden), 'T で吹き出しの道具になる (吹き出しの項目が出る)');
+  await drag([30, 20], [130, 60]);
+  ok(await modalOpen() && await ev(() => document.querySelector('#modal textarea') !== null), '囲み終わると、文字を入れる枠が出る');
+  ok(await hist() === h0, '文字を入れる前は、履歴に入らない');
+  await p.keyboard.type('hello');
+  await p.keyboard.press('Enter'); // 改行 (決定ではない)
+  ok(await modalOpen(), 'Enter は改行で、枠は閉じない');
+  await p.keyboard.type('world');
+  await p.keyboard.press('Control+Enter');
+  ok(!await modalOpen(), 'Ctrl + Enter で決まる');
+  let m = (await mk())[0];
+  ok(m && m.type === 'callout' && m.text === 'hello\nworld' && m.fs >= 8 && typeof m.tx === 'number' && await hist() === h0 + 1, `文字が入り、履歴は 1 つだけ増える → ${m && JSON.stringify({ t: m.text, fs: m.fs, tx: m.tx, ty: m.ty })}`);
+  const cx = await ev(() => __iv.S.edit.marks.length);
+
+  // 途中でやめる: 目印は残らず、履歴も増えない
+  await drag([30, 90], [120, 130]);
+  ok(await modalOpen(), '2 つ目を囲むと、また文字を入れる枠が出る');
+  await p.keyboard.press('Escape');
+  ok(!await modalOpen() && await ev(() => __iv.S.edit.marks.length) === cx && await hist() === h0 + 1, 'Esc でやめると、吹き出しは残らず、履歴も増えない');
+  await drag([30, 90], [120, 130]);
+  await p.keyboard.press('Control+Enter'); // 空のまま決定
+  ok(await ev(() => __iv.S.edit.marks.length) === cx && await hist() === h0 + 1, '文字が空のまま決めると、作らない');
+
+  // ---- 作ったあとの変更 ----
+  m = (await mk())[0];
+  const { x, y, w, h, fs, tx, ty } = m;
+  const cc = await scr(x + 10, y + 10);
+  await p.mouse.click(cc[0], cc[1]); // 選ぶ
+  ok(await ev(() => __iv.S.selMark === 0), 'クリックで吹き出しを選べる');
+  const before = await hist();
+  await drag([tx, ty], [tx + 20, ty - 10]); // 尖りの先を動かす
+  m = (await mk())[0];
+  ok(m.tx === tx + 20 && m.ty === ty - 10 && m.x === x && m.w === w && m.h === h, `尖りの先をつかむと、先だけ動く → ${m.tx},${m.ty}`);
+  ok(await hist() === before + 1, '尖りの移動は、履歴が 1 つ増える');
+  const { tx: tx2, ty: ty2 } = m;
+
+  await drag([x + w, y + h], [x + w + 40, y + h + 20]); // 右下の角: 比率を保って拡大
+  m = (await mk())[0];
+  ok(m.w > w && Math.abs(m.w / m.h - w / h) < 0.05 && m.fs > fs, `角を引くと、比率を保って大きくなり、文字も大きくなる → ${m.w}x${m.h} fs ${m.fs}`);
+  await p.keyboard.press('Control+z');
+  await reselect();
+  m = (await mk())[0];
+  ok(m.w === w && m.fs === fs, '角の拡大は取り消せる (大きさも文字も戻る)');
+  await drag([x + w, y + h / 2], [x + w + 30, y + h / 2]); // 右の辺: 箱だけ
+  m = (await mk())[0];
+  ok(m.w === w + 30 && m.h === h && m.fs === fs, `辺を引くと、箱だけ広がる (文字の大きさは同じ) → w ${m.w} fs ${m.fs}`);
+  await p.keyboard.press('Control+z');
+  await reselect();
+
+  // 動かすと、尖りもいっしょに動く
+  const mm = (await mk())[0];
+  await drag([mm.x + 10, mm.y + 10], [mm.x + 20, mm.y + 15]);
+  m = (await mk())[0];
+  ok(m.x === mm.x + 10 && m.tx === mm.tx + 10 && m.ty === mm.ty + 5, '箱を動かすと、尖りの先もいっしょに動く');
+  await p.keyboard.press('Control+z');
+  await reselect();
+
+  // 文字を直す: ダブルクリック → 変えて決定 / 変えずに決定
+  const hb = await hist();
+  const c0 = await scr(mm.x + 20, mm.y + 12);
+  await p.mouse.dblclick(c0[0], c0[1]);
+  ok(await modalOpen() && await ev(() => document.querySelector('#modal textarea').value) === 'hello\nworld', 'ダブルクリックで、いまの文字が入った枠が出る');
+  await p.keyboard.press('Control+A');
+  await p.keyboard.type('changed');
+  await p.keyboard.press('Control+Enter');
+  await p.waitForTimeout(100);
+  ok((await mk())[0].text === 'changed' && await hist() === hb + 1, `文字を直すと、履歴が 1 つ増える → ${(await mk())[0].text} / ${await hist()} (前 ${hb})`);
+  await p.keyboard.press('Control+z');
+  await reselect();
+  ok((await mk())[0].text === 'hello\nworld', `文字の直しも取り消せる → ${JSON.stringify((await mk())[0].text)}, modal ${await modalOpen()}`);
+  await ev(() => document.querySelector('[data-act="coEdit"]').click());
+  await p.keyboard.press('Control+Enter');
+  await p.waitForTimeout(100);
+  ok(!await modalOpen() && await hist() === hb, '「文字を直す」を変えずに決めても、履歴は増えない');
+
+  // 項目: 根もとの太さ・光彩・文字の大きさ・字体が、選んだ吹き出しに効く
+  await setRange('co-root', 60);
+  ok((await mk())[0].root === 0.6, '根もとの太さのスライダーが、選んだ吹き出しに効く (0.6)');
+  await setRange('co-glow', 12);
+  ok((await mk())[0].glow === 12, '光彩のスライダーが効く');
+  await setRange('co-fs', 33);
+  ok((await mk())[0].fs === 33, '文字の大きさのスライダーが、選んだ吹き出しに効く');
+  await ev(() => { const e = document.getElementById('co-font'); e.value = 'mincho'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+  ok((await mk())[0].font === 'mincho', '字体を替えられる');
+  await setCheck('co-outline', true);
+  ok((await mk())[0].outline === true, '文字の縁取りを付けられる');
+  ok(await ev(() => !document.getElementById('co-fs-row').hidden && !document.getElementById('btn-co-edit').hidden), '吹き出しを選んでいるとき、文字の大きさと「文字を直す」が出る');
+  ok(await ev(() => __iv.settings.pen.callout.root === 0.6 && __iv.settings.pen.callout.font === 'mincho'), '設定は、次に作る吹き出しにも引き継がれる');
+
+  // 選びをやめると、文字の大きさの欄は隠れる
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('t');
+  await ev(() => { __iv.S.selMark = -1; __iv.syncPanel(); });
+  ok(await ev(() => !document.getElementById('pen-opts').hidden && document.getElementById('co-fs-row').hidden && document.getElementById('btn-co-edit').hidden), '何も選んでいないときは、文字の大きさと「文字を直す」は隠れる');
+
+  // ---- 向きを変えても、尖りの先が絵と同じ場所に残る ----
+  await ev(() => __iv.resetAll());
+  const [W0, H0] = await ev(() => [__iv.S.bw, __iv.S.bh]);
+  await put({ ...base, tx: 170, ty: 20, text: 'x' });
+  await ev(() => __iv.doRotate(1));
+  m = (await mk())[0];
+  ok(m.tx === H0 - 20 && m.ty === 170, `右に回すと、尖りの先も回る (${m.tx}, ${m.ty})`);
+  await ev(() => __iv.doRotate(-1));
+  m = (await mk())[0];
+  ok(m.tx === 170 && m.ty === 20, '左に戻すと、元の位置に戻る');
+  await ev(() => __iv.doFlip('h'));
+  m = (await mk())[0];
+  ok(m.tx === W0 - 170 && m.ty === 20, '左右反転で、尖りの先も反転する');
+  await ev(() => __iv.doFlip('v'));
+  m = (await mk())[0];
+  ok(m.tx === W0 - 170 && m.ty === H0 - 20, '上下反転で、尖りの先も反転する');
+
+  // ---- 文字だけ (Shift + T) ----
+  await ev(() => __iv.resetAll());
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('Shift+T');
+  ok(await ev(() => __iv.S.tool === 'callout' && __iv.settings.pen.callout.box === false), 'Shift + T で、箱なしの文字の道具になる');
+  await drag([30, 100], [150, 130]);
+  await p.keyboard.type('note');
+  await p.keyboard.press('Control+Enter');
+  await p.waitForTimeout(100);
+  m = (await mk())[0];
+  ok(m && m.box === false && m.text === 'note', `箱なしで作れる → ${m && JSON.stringify({ box: m.box, text: m.text })}`);
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('Shift+T');
+  await p.waitForTimeout(100);
+  ok(await ev(() => document.getElementById('btn-text').classList.contains('on') && !document.getElementById('btn-callout').classList.contains('on')), '文字の道具のとき、「文字」のボタンだけに印が付く');
+  await ev(() => __iv.resetAll());
+  await ev(() => { __iv.settings.pen = {}; });
+}
+
+// ----------------------------------------------------------------------
 section('取り消し・やり直し・覚えておく');
 {
   // 前の試験で積んだ履歴を捨てて、まっさらな状態から始める
